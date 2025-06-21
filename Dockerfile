@@ -39,12 +39,9 @@ COPY alembic.ini .
 COPY firebase.json .
 COPY .env .
 
-# Ensure the wait-for-services script is executable
-RUN chmod +x ./app/wait-for-services.sh
-
 # Expose port for FastAPI application
 EXPOSE 8000
 
 # Command to run the application
 # This will be overridden by docker-compose.yml but is good for direct image runs
-CMD ["/app/app/wait-for-services.sh"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

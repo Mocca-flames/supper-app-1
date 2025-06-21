@@ -15,8 +15,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # The wait-for-services.sh script should handle migrations and starting uvicorn
-    command: /app/app/wait-for-services.sh
+    # Start alembic migrations and then uvicorn directly
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   db:
     image: postgres:13-alpine # Using alpine for a smaller image
