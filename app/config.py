@@ -3,6 +3,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "DATABASE_URL"
+    POSTGRES_USER: str = "default_user"
+    POSTGRES_PASSWORD: str = "default_password"
+    POSTGRES_DB: str = "default_db"
     
     # Redis
     REDIS_URL: str = "REDIS_URL"
