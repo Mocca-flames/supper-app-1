@@ -1,0 +1,46 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    # Volumes for development hot-reloading (optional for production image)
+    # If you want the image to be self-contained for production, remove these.
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # The wait-for-services.sh script should handle migrations and starting uvicorn
+    command: /app/app/wait-for-services.sh
+
+  db:
+    image: postgres:13-alpine # Using alpine for a smaller image
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env # Loads POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    ports:
+      - "5432:5432" # Expose only if direct access to DB from host is needed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"] # Use env vars from .env
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:6-alpine # Using alpine for a smaller image
+    ports:
+      - "6379:6379" # Expose only if direct access to Redis from host is needed
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data: {}

@@ -1,0 +1,14 @@
+fastapi==0.115.12
+uvicorn==0.34.3
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.10
+alembic==1.16.1
+redis==4.3.4
+firebase-admin==6.9.0
+python-multipart==0.0.20
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic[email]==2.5.0
+pydantic-settings
+python-dotenv>=0.21.0 # For loading .env files
+websockets==13.0

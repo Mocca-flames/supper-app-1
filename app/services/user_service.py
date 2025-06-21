@@ -1,0 +1,104 @@
+import logging # Added logging
+from typing import List # Added List for type hinting
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException # Added HTTPException
+from ..models.user_models import User, Client, Driver
+from ..schemas.user_schemas import UserCreate, ClientCreate, DriverCreate
+from ..auth.firebase_auth import FirebaseAuth
+
+logger = logging.getLogger(__name__) # Added logger instance
+
+class UserService:
+    @staticmethod
+    def create_user_from_firebase(db: Session, firebase_uid: str, user_type: str) -> User:  # Added user_type
+        # First, try to fetch the user from the database.
+        existing_user = db.query(User).filter(User.id == firebase_uid).first()
+        if existing_user:
+            # If the user already exists, return them. This handles the "sign them in" case.
+            return existing_user
+
+        # If the user does not exist, proceed to get info from Firebase and create them.
+        # This call is now made only if the user is not found in the DB initially.
+        firebase_user = FirebaseAuth.get_user_info(firebase_uid)
+        
+        new_user = User(
+            id=firebase_uid,
+            email=firebase_user.get("email"),
+            full_name=firebase_user.get("display_name"),
+            phone_number=firebase_user.get("phone_number"),
+            role=user_type  # Assign the user_type to the role attribute
+        )
+        
+        try:
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+            return new_user
+        except IntegrityError:
+            db.rollback()  # Important to rollback the session on error
+            # The user might have been created by a concurrent request.
+            # Try fetching again.
+            concurrently_created_user = db.query(User).filter(User.id == firebase_uid).first()
+            if concurrently_created_user:
+                return concurrently_created_user
+            else:
+                # If it's still not there, then the IntegrityError was for some other reason,
+                # or something very unusual happened. Re-raise the original error.
+                raise
+    
+    @staticmethod
+    def create_client_profile(db: Session, user_id: str, client_data: ClientCreate) -> Client:
+        client = Client(
+            client_id=user_id,
+            home_address=client_data.home_address
+        )
+        db.add(client)
+        db.commit()
+        db.refresh(client)
+        return client
+    
+    @staticmethod
+    def create_driver_profile(db: Session, user_id: str, driver_data: DriverCreate) -> Driver:
+        logger.info(f"UserService: Attempting to create driver profile for user_id: {user_id} with data: {driver_data.model_dump_json(exclude_none=True)}")
+        driver = Driver(
+            driver_id=user_id,
+            license_no=driver_data.license_no,
+            vehicle_type=driver_data.vehicle_type
+        )
+        try:
+            db.add(driver)
+            logger.info(f"UserService: Driver object for user_id: {user_id} added to session.")
+            db.commit()
+            logger.info(f"UserService: db.commit() successful for driver profile creation for user_id: {user_id}")
+            db.refresh(driver)
+            logger.info(f"UserService: db.refresh(driver) successful for user_id: {user_id}")
+            return driver
+        except IntegrityError as ie:
+            db.rollback()
+            logger.error(f"UserService: IntegrityError creating driver profile for user_id {user_id}. Error: {str(ie)}")
+            # This detail might expose too much, consider a generic message for the client.
+            # For now, let the route handler decide the final HTTP response detail.
+            raise # Re-raise to be caught by the route handler, or raise specific HTTPException
+        except Exception as e:
+            db.rollback()
+            logger.error(f"UserService: Unexpected error creating driver profile for user_id {user_id}. Type: {type(e).__name__}, Error: {str(e)}")
+            raise # Re-raise to be caught by the route handler
+    
+    # Removed get_pending_drivers and approve_driver methods
+    # as driver approval is no longer required for V1.
+
+    @staticmethod
+    def get_all_drivers(db: Session) -> List[User]:
+        """Retrieve all users with the 'driver' role."""
+        # Ensure driver_profile is loaded to be accessible for DriverResponse construction
+        # This can be done via joinedload or selectinload if performance becomes an issue
+        # For now, relying on SQLAlchemy's default lazy loading or Pydantic's attribute access.
+        drivers = db.query(User).filter(User.role == "driver").all()
+        return drivers
+
+    @staticmethod
+    def get_all_clients(db: Session) -> List[User]:
+        """Retrieve all users with the 'client' role."""
+        clients = db.query(User).filter(User.role == "client").all()
+        return clients
