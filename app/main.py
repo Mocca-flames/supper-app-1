@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager # Added for lifespan
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text # Added for text() construct
 from .database import engine, get_db
 from .models import user_models, order_models, discount_models
 from .auth import firebase_auth  # Initializes Firebase Admin SDK (via app.auth.firebase_auth)
@@ -81,7 +82,7 @@ def health_check(db: Session = Depends(get_db)):
 
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         database_status = "connected"
     except Exception as e:
         logger.error(f"Database connection error: {e}")
