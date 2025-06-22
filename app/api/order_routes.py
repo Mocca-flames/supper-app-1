@@ -5,7 +5,7 @@ from typing import Optional
 from ..database import get_db
 from ..services.order_service import OrderService
 from ..schemas.order_schemas import TrackingSessionResponse, OrderResponse
-from ..schemas.user_schemas import DriverLocationResponse, User # Ensure User is imported for current_user
+from ..schemas.user_schemas import DriverLocationResponse, UserResponse # Changed User to UserResponse
 from ..auth.middleware import get_current_user # For client authentication
 
 router = APIRouter(
@@ -17,7 +17,7 @@ router = APIRouter(
 def track_order(
     order_id: str = Path(..., title="The ID of the order to track"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: UserResponse = Depends(get_current_user) # Changed User to UserResponse
 ):
     """
     Starts real-time tracking for the specified order.
@@ -36,7 +36,7 @@ def track_order(
 def cancel_order_client(
     order_id: str = Path(..., title="The ID of the order to cancel"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: UserResponse = Depends(get_current_user) # Changed User to UserResponse
 ):
     """
     Cancels the specified order.
@@ -59,7 +59,7 @@ def cancel_order_client(
 def get_order_driver_location_client(
     order_id: str = Path(..., title="The ID of the order for which to get driver location"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: UserResponse = Depends(get_current_user) # Changed User to UserResponse
 ):
     """
     Returns the current driver location for an order.

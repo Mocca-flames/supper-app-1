@@ -4,7 +4,7 @@ from typing import List
 from ..database import get_db
 from ..services.user_service import UserService
 from ..services.order_service import OrderService # Added
-from ..schemas.user_schemas import DriverResponse, UserResponse, User # Added User for type hint consistency
+from ..schemas.user_schemas import DriverResponse, UserResponse # Removed User, UserResponse is sufficient
 from ..schemas.order_schemas import AdminOrderCreate, OrderResponse # Added
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
