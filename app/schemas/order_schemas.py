@@ -45,3 +45,10 @@ class OrderStatusUpdate(BaseModel):
 class OrderAccept(BaseModel):
     driver_id: str
     estimated_price: Decimal
+
+class TrackingSessionResponse(BaseModel):
+    session_id: str
+    order_id: str
+    status: str  # e.g., "active", "pending_driver_acceptance"
+    message: Optional[str] = None
+    # Potentially add driver_id, current_location if available at session start

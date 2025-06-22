@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path # Added Path
 from sqlalchemy.orm import Session
 from typing import List
 from ..database import get_db
 from ..services.user_service import UserService
 from ..services.order_service import OrderService # Added
-from ..schemas.user_schemas import DriverResponse, UserResponse # Added UserResponse
+from ..schemas.user_schemas import DriverResponse, UserResponse, User # Added User for type hint consistency
 from ..schemas.order_schemas import AdminOrderCreate, OrderResponse # Added
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -78,3 +78,25 @@ def get_all_clients(
     """Admin retrieves all clients."""
     clients = UserService.get_all_clients(db)
     return clients
+
+@router.patch("/orders/{order_id}/cancel", response_model=OrderResponse)
+def admin_cancel_order(
+    order_id: str = Path(..., title="The ID of the order to cancel"),
+    db: Session = Depends(get_db),
+    admin_verified = Depends(verify_admin_key) # Ensure admin access
+):
+    """
+    Admin cancels the specified order.
+    """
+    try:
+        # For admin, client_id is not checked for ownership, is_admin=True bypasses that
+        order = OrderService.cancel_order(db, order_id, client_id=None, is_admin=True)
+        return order
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        else: # e.g., "Order cannot be cancelled"
+            raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Log the exception e
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while cancelling the order.")
