@@ -1,12 +1,18 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from pydantic import computed_field
+
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "DATABASE_URL"
-    POSTGRES_USER: str = "default_user"
-    POSTGRES_PASSWORD: str = "default_password"
-    POSTGRES_DB: str = "default_db"
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
     
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@db:5432/{self.POSTGRES_DB}"
+
     # Redis
     REDIS_URL: str = "REDIS_URL"
     

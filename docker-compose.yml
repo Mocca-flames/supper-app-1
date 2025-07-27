@@ -16,14 +16,16 @@ services:
       redis:
         condition: service_healthy
     # Start alembic migrations and then uvicorn directly
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   db:
     image: postgres:13-alpine # Using alpine for a smaller image
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - .env # Loads POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supper_password_2025
+      POSTGRES_DB: supper
     ports:
       - "5432:5432" # Expose only if direct access to DB from host is needed
     healthcheck:

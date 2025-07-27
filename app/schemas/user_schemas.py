@@ -15,14 +15,24 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     firebase_uid: str
 
+class UserProfileUpdate(UserBase):
+    """Schema for updating general user profile information."""
+    pass
+
 class UserResponse(UserBase):
     id: str
     role: Optional[UserRole] = None # Added role field
     created_at: datetime
+    client_profile: Optional["ClientResponse"] = None
+    driver_profile: Optional["DriverResponse"] = None
     
     model_config = {"from_attributes": True}
 
 class ClientCreate(BaseModel):
+    home_address: Optional[str] = None
+
+class ClientProfileUpdate(BaseModel):
+    """Schema for updating client-specific profile information."""
     home_address: Optional[str] = None
 
 class ClientResponse(BaseModel):
@@ -66,3 +76,6 @@ class DriverLocationResponse(BaseModel):
     latitude: float
     longitude: float
     # timestamp: Optional[datetime] = None # Optional: if you decide to store and return it from Redis
+
+# Forward references for UserResponse
+UserResponse.model_rebuild()

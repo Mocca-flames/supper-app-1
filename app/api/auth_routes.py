@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..services.user_service import UserService
-from ..schemas.user_schemas import UserResponse, ClientCreate, ClientResponse, DriverCreate, DriverResponse, UserRole # Added UserRole
+from ..schemas.user_schemas import UserResponse, ClientCreate, ClientResponse, DriverCreate, DriverResponse, UserRole, UserProfileUpdate # Added UserProfileUpdate
 from ..auth.middleware import get_current_user
 
 # Configure logging
@@ -92,3 +92,22 @@ def get_current_user_info(current_user = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Unexpected error during get_current_user_info for user_id {current_user.id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error while retrieving user information.")
+
+@router.put("/profile", response_model=UserResponse)
+def update_user_profile_route(
+    user_data: UserProfileUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update current user's general profile information."""
+    logger.info(f"Attempting to update user profile for user_id: {current_user.id}")
+    try:
+        updated_user = UserService.update_user_profile(db, current_user.id, user_data)
+        logger.info(f"Successfully updated user profile for user_id: {current_user.id}")
+        return updated_user
+    except HTTPException as http_exc:
+        logger.error(f"HTTPException during user profile update for user_id {current_user.id}: {http_exc.detail}")
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Unexpected error during user profile update for user_id {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during user profile update.")

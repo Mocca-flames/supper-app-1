@@ -2,6 +2,9 @@ from fastapi import HTTPException, Depends, Header
 from sqlalchemy.orm import Session
 from typing import Optional
 from .firebase_auth import FirebaseAuth
+from sqlalchemy.orm import Session, joinedload # Added joinedload
+from typing import Optional
+from .firebase_auth import FirebaseAuth
 from ..database import get_db
 from ..models.user_models import User
 
@@ -18,8 +21,12 @@ def get_current_user(
         token = authorization.split(" ")[1]
         firebase_uid = FirebaseAuth.verify_firebase_token(token)
         
-        # Get user from database
-        user = db.query(User).filter(User.id == firebase_uid).first()
+        # Get user from database, eagerly loading client and driver profiles
+        user = db.query(User).options(
+            joinedload(User.client_profile),
+            joinedload(User.driver_profile)
+        ).filter(User.id == firebase_uid).first()
+        
         if not user:
             raise HTTPException(status_code=404, detail="User not found in database")
         

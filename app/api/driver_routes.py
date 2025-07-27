@@ -101,6 +101,9 @@ def update_driver_profile_route(
     if not updated_user or not updated_user.driver_profile:
         raise HTTPException(status_code=404, detail="Driver profile not found or update failed")
 
+    # Refresh the user object to ensure relationships are loaded for the response
+    db.refresh(updated_user)
+    
     # Construct the DriverResponse
     # Ensure all fields for DriverResponse are correctly mapped from updated_user and its driver_profile
     return DriverProfileResponse(
@@ -125,6 +128,9 @@ def update_driver_availability_route(
 
     if not updated_user or not updated_user.driver_profile:
         raise HTTPException(status_code=404, detail="Driver profile not found or update failed")
+
+    # Refresh the user object to ensure relationships are loaded for the response
+    db.refresh(updated_user)
 
     return DriverProfileResponse(
         driver_id=updated_user.driver_profile.driver_id,

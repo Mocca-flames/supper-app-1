@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 from typing import List, Dict # Added Dict
 from ..database import get_db
 from ..services.order_service import OrderService
+from ..services.user_service import UserService # Added UserService
 from ..schemas.order_schemas import OrderCreate, OrderResponse
-from ..schemas.user_schemas import DriverLocationResponse # Added DriverLocationResponse
+from ..schemas.user_schemas import DriverLocationResponse, ClientProfileUpdate, ClientResponse # Added ClientProfileUpdate, ClientResponse
 from ..auth.middleware import get_current_user, get_current_client # get_current_client might be used by other routes
 from ..utils.redis_client import RedisService # Added RedisService
 
@@ -63,3 +64,33 @@ def get_driver_location_route( # Renamed to avoid conflict if a similar schema e
         )
     except (ValueError, TypeError): # Catch potential conversion errors
         raise HTTPException(status_code=500, detail="Error processing location data.")
+
+@router.put("/profile", response_model=ClientResponse)
+def update_client_profile_route(
+    client_data: ClientProfileUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update current client's profile information."""
+    if current_user.role != "client":
+        raise HTTPException(status_code=403, detail="User is not a client")
+    
+    if not current_user.client_profile:
+        raise HTTPException(status_code=404, detail="Client profile not found for this user. Please create one first.")
+
+    try:
+        updated_client = UserService.update_client_profile(db, current_user.id, client_data)
+        # To return ClientResponse, we need to ensure the 'user' field is populated.
+        # The update_client_profile service method returns a Client object.
+        # We can refresh the current_user object to get the updated client_profile with its user relationship loaded.
+        db.refresh(current_user) # Refresh the user object to get updated relationships
+        return ClientResponse(
+            client_id=updated_client.client_id,
+            home_address=updated_client.home_address,
+            is_verified=updated_client.is_verified,
+            user=current_user # Pass the refreshed current_user which now has the updated client_profile
+        )
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error during client profile update: {e}")

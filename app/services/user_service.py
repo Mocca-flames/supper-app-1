@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException # Added HTTPException
 from ..models.user_models import User, Client, Driver
-from ..schemas.user_schemas import UserCreate, ClientCreate, DriverCreate
+from ..schemas.user_schemas import UserCreate, ClientCreate, DriverCreate, UserProfileUpdate, ClientProfileUpdate, DriverProfileUpdate # Added update schemas
 from ..auth.firebase_auth import FirebaseAuth
 
 logger = logging.getLogger(__name__) # Added logger instance
@@ -46,13 +46,41 @@ class UserService:
                 # If it's still not there, then the IntegrityError was for some other reason,
                 # or something very unusual happened. Re-raise the original error.
                 raise
-    
+
+    @staticmethod
+    def update_user_profile(db: Session, user_id: str, user_data: UserProfileUpdate) -> User:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        for field, value in user_data.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
     @staticmethod
     def create_client_profile(db: Session, user_id: str, client_data: ClientCreate) -> Client:
         client = Client(
             client_id=user_id,
             home_address=client_data.home_address
         )
+        db.add(client)
+        db.commit()
+        db.refresh(client)
+        return client
+
+    @staticmethod
+    def update_client_profile(db: Session, user_id: str, client_data: ClientProfileUpdate) -> Client:
+        client = db.query(Client).filter(Client.client_id == user_id).first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client profile not found")
+
+        for field, value in client_data.model_dump(exclude_unset=True).items():
+            setattr(client, field, value)
+
         db.add(client)
         db.commit()
         db.refresh(client)
@@ -85,8 +113,40 @@ class UserService:
             logger.error(f"UserService: Unexpected error creating driver profile for user_id {user_id}. Type: {type(e).__name__}, Error: {str(e)}")
             raise # Re-raise to be caught by the route handler
     
-    # Removed get_pending_drivers and approve_driver methods
-    # as driver approval is no longer required for V1.
+    @staticmethod
+    def update_driver_profile(db: Session, user_id: str, driver_data: DriverProfileUpdate) -> User:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not user.driver_profile:
+            raise HTTPException(status_code=404, detail="Driver profile not found for this user")
+
+        # Update User fields if provided
+        for field, value in driver_data.model_dump(exclude_unset=True).items():
+            if hasattr(user, field):
+                setattr(user, field, value)
+
+        # Update Driver profile fields if provided
+        for field, value in driver_data.model_dump(exclude_unset=True).items():
+            if hasattr(user.driver_profile, field):
+                setattr(user.driver_profile, field, value)
+
+        db.add(user) # Add user and driver_profile to session
+        db.commit()
+        db.refresh(user)
+        return user
+    
+    @staticmethod
+    def update_driver_availability(db: Session, user_id: str, is_available: bool) -> User:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.driver_profile:
+            raise HTTPException(status_code=404, detail="Driver profile not found")
+        
+        user.driver_profile.is_available = is_available
+        db.add(user.driver_profile)
+        db.commit()
+        db.refresh(user) # Refresh user to get updated driver_profile
+        return user
 
     @staticmethod
     def get_all_drivers(db: Session) -> List[User]:
