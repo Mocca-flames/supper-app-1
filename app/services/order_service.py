@@ -1,28 +1,41 @@
 import uuid # Added for generating session_id
 from sqlalchemy.orm import Session
-from typing import List, Optional # Added Optional
+from typing import List, Optional
 from decimal import Decimal
 from ..models.order_models import Order, OrderStatus
-from ..schemas.order_schemas import OrderCreate, OrderAccept, TrackingSessionResponse # Added TrackingSessionResponse
-from ..schemas.user_schemas import DriverLocationResponse # Added DriverLocationResponse
+from ..schemas.order_schemas import OrderCreate, OrderAccept, TrackingSessionResponse
+from ..schemas.user_schemas import DriverLocationResponse
 from ..utils.redis_client import RedisService
+from ..services.mapbox_service import MapboxService # Import MapboxService
+from ..services.location_service import LocationService # Import LocationService (will create this next)
 
 class OrderService:
     @staticmethod
     def create_order(db: Session, order_data: OrderCreate) -> Order:
+        # Validate addresses using geocoding before creating the order
+        pickup_coords = LocationService.geocode_address(order_data.pickup_address)
+        dropoff_coords = LocationService.geocode_address(order_data.dropoff_address)
+
+        if not pickup_coords or not dropoff_coords:
+            raise ValueError("Invalid pickup or dropoff address provided.")
+
         order = Order(
             client_id=order_data.client_id,
             order_type=order_data.order_type,
             pickup_address=order_data.pickup_address,
-            pickup_latitude=order_data.pickup_latitude,
-            pickup_longitude=order_data.pickup_longitude,
+            pickup_latitude=pickup_coords['latitude'],
+            pickup_longitude=pickup_coords['longitude'],
             dropoff_address=order_data.dropoff_address,
-            dropoff_latitude=order_data.dropoff_latitude,
-            dropoff_longitude=order_data.dropoff_longitude,
+            dropoff_latitude=dropoff_coords['latitude'],
+            dropoff_longitude=dropoff_coords['longitude'],
             special_instructions=order_data.special_instructions,
             patient_details=order_data.patient_details,
             medical_items=order_data.medical_items
         )
+        
+        # Calculate route details and update order
+        order = OrderService._calculate_order_details(order)
+
         db.add(order)
         db.commit()
         db.refresh(order)
@@ -32,6 +45,34 @@ class OrderService:
         
         return order
     
+    @staticmethod
+    def _calculate_order_details(order: Order) -> Order:
+        # Use MapboxService to get route information
+        route_info = MapboxService.get_directions(
+            (order.pickup_longitude, order.pickup_latitude),
+            (order.dropoff_longitude, order.dropoff_latitude)
+        )
+
+        if route_info:
+            order.route_geometry = route_info.get('geometry')
+            order.estimated_duration = route_info.get('duration')
+            order.estimated_distance = route_info.get('distance')
+            order.calculated_eta = route_info.get('eta') # Assuming ETA is part of route_info
+            order.route_calculation_timestamp = route_info.get('timestamp') # Assuming timestamp is part of route_info
+            # Implement distance-based pricing calculation
+            # For now, a simple placeholder: $1 per km
+            order.price = Decimal(order.estimated_distance / 1000 * 1.00) # distance is in meters, convert to km
+        else:
+            # Handle cases where route calculation fails
+            order.route_geometry = None
+            order.estimated_duration = None
+            order.estimated_distance = None
+            order.calculated_eta = None
+            order.route_calculation_timestamp = None
+            order.price = Decimal(0.00) # Default price if route cannot be calculated
+
+        return order
+
     @staticmethod
     def get_pending_orders(db: Session) -> List[Order]:
         return db.query(Order).filter(Order.status == OrderStatus.PENDING).all()

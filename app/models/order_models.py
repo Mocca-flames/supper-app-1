@@ -43,6 +43,14 @@ class Order(Base):
     price = Column(Numeric(10, 2), nullable=True)
     distance_km = Column(Numeric(10, 2), nullable=True)
     
+    # MapBox Integration Fields
+    route_geometry = Column(Text, nullable=True)  # Stores MapBox route polyline
+    estimated_duration = Column(Numeric(10, 2), nullable=True) # Estimated duration in minutes/seconds
+    estimated_distance = Column(Numeric(10, 2), nullable=True) # Estimated distance in km
+    calculated_eta = Column(DateTime, nullable=True) # Estimated time of arrival with traffic
+    route_calculation_timestamp = Column(DateTime, nullable=True) # Timestamp of last route calculation
+    alternative_routes = Column(Text, nullable=True) # Stores alternative routes (e.g., JSON string)
+
     special_instructions = Column(Text, nullable=True)
     patient_details = Column(Text, nullable=True)  # For patient transport
     medical_items = Column(Text, nullable=True)    # For medical delivery
