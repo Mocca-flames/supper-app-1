@@ -111,6 +111,9 @@ class OrderService:
         # Update Redis cache
         RedisService.set_order_status(order.id, order.status.value)
         
+        # Publish status update to Redis channel
+        RedisService.publish_order_update(order.id, order.status.value)
+        
         return order
     
     @staticmethod

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
 from ..database import get_db
 from ..services.order_service import OrderService
@@ -12,6 +12,19 @@ router = APIRouter(
     prefix="/orders", # This prefix will be combined with /api in main.py
     tags=["Orders"]
 )
+@router.get("/", response_model=List[OrderResponse])
+def get_client_orders(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Returns all orders for the authenticated client.
+    """
+    try:
+        orders = OrderService.get_orders_by_client_id(db, current_user.id)
+        return orders
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 @router.post("/", response_model=OrderResponse)
 def create_new_order(
