@@ -39,7 +39,6 @@ class ClientResponse(BaseModel):
     client_id: str
     home_address: Optional[str] = None
     is_verified: bool
-    user: UserResponse
     
     model_config = {"from_attributes": True}
 
@@ -52,7 +51,6 @@ class DriverResponse(BaseModel):
     license_no: Optional[str] = None
     vehicle_type: Optional[str] = None
     is_available: bool
-    user: UserResponse
     
     model_config = {"from_attributes": True}
 

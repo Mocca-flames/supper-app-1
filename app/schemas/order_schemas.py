@@ -13,6 +13,7 @@ class OrderCreate(BaseModel):
     dropoff_latitude: str
     dropoff_longitude: str
     client_id: str
+    distance_km: str # Added distance_km as string from frontend
     special_instructions: Optional[str] = None
     patient_details: Optional[str] = None
     medical_items: Optional[str] = None

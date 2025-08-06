@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
 from typing import Optional
+import logging
 
 from ..database import get_db
 from ..services.order_service import OrderService
 from ..schemas.order_schemas import TrackingSessionResponse, OrderResponse
-from ..schemas.user_schemas import DriverLocationResponse, UserResponse # Changed User to UserResponse
-from ..auth.middleware import get_current_user # For client authentication
+from ..schemas.user_schemas import DriverLocationResponse, UserResponse
+from ..auth.middleware import get_current_user
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/orders", # This prefix will be combined with /api in main.py
@@ -79,3 +83,28 @@ def get_order_driver_location_client(
     except Exception as e:
         # Log the exception e
         raise HTTPException(status_code=500, detail="An unexpected error occurred while fetching driver location.")
+    
+@router.delete("/delete_all")
+async def delete_all_orders(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)  # Use authenticated user
+):
+    """
+    Deletes all orders for the authenticated user.
+    This is a destructive operation and should be used with caution.
+    """
+    try:
+        logger.info(f"🗑️ Delete all orders requested by user: {current_user.id}")
+        result = OrderService.delete_all_orders_for_user(db, current_user.id)  # Use authenticated user's ID
+        logger.info(f"✅ Successfully processed delete request for user {current_user.id}")
+        return {
+            "message": "Orders deleted successfully", 
+            "details": result,
+            "user_id": current_user.id  # Include user ID in response for confirmation
+        }
+    except ValueError as e:
+        logger.error(f"❌ ValueError in delete_all_orders for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in delete_all_orders for user {current_user.id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

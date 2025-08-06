@@ -64,11 +64,14 @@ def create_driver_profile(
     logger.info(f"Attempting to create driver profile for user_id: {current_user.id}")
     try:
         if current_user.driver_profile:
-            logger.warning(f"Driver profile already exists for user_id: {current_user.id}")
-            raise HTTPException(status_code=400, detail="Driver profile already exists")
-        
+            logger.info(f"Driver profile already exists for user_id: {current_user.id}. Updating existing profile.")
+            # Update the existing driver profile instead of raising an error
+            driver = UserService.update_driver_profile(db, current_user.id, driver_data)
+            logger.info(f"Successfully updated driver profile for user_id: {current_user.id}, driver_id: {driver.driver_id}")
+            return driver
+
         driver = UserService.create_driver_profile(db, current_user.id, driver_data)
-        logger.info(f"Successfully created driver profile for user_id: {current_user.id}, driver_id: {driver.id}")
+        logger.info(f"Successfully created driver profile for user_id: {current_user.id}, driver_id: {driver.driver_id}")
         return driver
     except HTTPException as http_exc:
         logger.error(f"HTTPException during driver profile creation for user_id {current_user.id}: {http_exc.detail}")

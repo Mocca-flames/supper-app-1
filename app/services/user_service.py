@@ -12,40 +12,81 @@ logger = logging.getLogger(__name__) # Added logger instance
 class UserService:
     @staticmethod
     def create_user_from_firebase(db: Session, firebase_uid: str, user_type: str) -> User:  # Added user_type
-        # First, try to fetch the user from the database.
-        existing_user = db.query(User).filter(User.id == firebase_uid).first()
-        if existing_user:
-            # If the user already exists, return them. This handles the "sign them in" case.
-            return existing_user
-
-        # If the user does not exist, proceed to get info from Firebase and create them.
-        # This call is now made only if the user is not found in the DB initially.
+        # Get user info from Firebase first to get the email
         firebase_user = FirebaseAuth.get_user_info(firebase_uid)
-        
-        new_user = User(
-            id=firebase_uid,
-            email=firebase_user.get("email"),
-            full_name=firebase_user.get("display_name"),
-            phone_number=firebase_user.get("phone_number"),
-            role=user_type  # Assign the user_type to the role attribute
-        )
-        
-        try:
-            db.add(new_user)
-            db.commit()
-            db.refresh(new_user)
-            return new_user
-        except IntegrityError:
-            db.rollback()  # Important to rollback the session on error
-            # The user might have been created by a concurrent request.
-            # Try fetching again.
-            concurrently_created_user = db.query(User).filter(User.id == firebase_uid).first()
-            if concurrently_created_user:
-                return concurrently_created_user
-            else:
-                # If it's still not there, then the IntegrityError was for some other reason,
-                # or something very unusual happened. Re-raise the original error.
-                raise
+        user_email = firebase_user.get("email")
+
+        if not user_email:
+            raise HTTPException(status_code=400, detail="Could not retrieve email from Firebase")
+
+        # Try to fetch the user from the database by email.
+        existing_user = db.query(User).filter(User.email == user_email).first()
+
+        if existing_user:
+            # If the user already exists with this email:
+            # Check if the firebase_uid is different and update if necessary.
+            if existing_user.id != firebase_uid:
+                # Update the user ID if it's different
+                existing_user.id = firebase_uid
+                logger.info(f"Updating user ID for email {user_email} from {existing_user.id} to {firebase_uid}")
+
+            # Update the role if it's different
+            if existing_user.role != user_type:
+                existing_user.role = user_type
+                logger.info(f"Updating role for email {user_email} from {existing_user.role} to {user_type}")
+
+            # Update other fields if they are different (e.g., display name, phone number)
+            if existing_user.full_name != firebase_user.get("display_name"):
+                existing_user.full_name = firebase_user.get("display_name")
+                logger.info(f"Updating full_name for email {user_email}")
+            if existing_user.phone_number != firebase_user.get("phone_number"):
+                existing_user.phone_number = firebase_user.get("phone_number")
+                logger.info(f"Updating phone_number for email {user_email}")
+
+            try:
+                db.add(existing_user)
+                db.commit()
+                db.refresh(existing_user)
+                return existing_user
+            except IntegrityError:
+                db.rollback()
+                # Handle potential concurrent updates or other integrity issues
+                # Re-fetch and return if possible, or raise an error
+                concurrently_updated_user = db.query(User).filter(User.email == user_email).first()
+                if concurrently_updated_user:
+                    return concurrently_updated_user
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to update existing user due to integrity error")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Unexpected error updating user for email {user_email}. Error: {str(e)}")
+                raise HTTPException(status_code=500, detail="An unexpected error occurred while updating user profile.")
+        else:
+            # If the user does not exist, proceed to create them.
+            new_user = User(
+                id=firebase_uid,
+                email=user_email,
+                full_name=firebase_user.get("display_name"),
+                phone_number=firebase_user.get("phone_number"),
+                role=user_type  # Assign the user_type to the role attribute
+            )
+            
+            try:
+                db.add(new_user)
+                db.commit()
+                db.refresh(new_user)
+                return new_user
+            except IntegrityError:
+                db.rollback()  # Important to rollback the session on error
+                # The user might have been created by a concurrent request.
+                # Try fetching again.
+                concurrently_created_user = db.query(User).filter(User.id == firebase_uid).first()
+                if concurrently_created_user:
+                    return concurrently_created_user
+                else:
+                    # If it's still not there, then the IntegrityError was for some other reason,
+                    # or something very unusual happened. Re-raise the original error.
+                    raise
 
     @staticmethod
     def update_user_profile(db: Session, user_id: str, user_data: UserProfileUpdate) -> User:
@@ -114,7 +155,7 @@ class UserService:
             raise # Re-raise to be caught by the route handler
     
     @staticmethod
-    def update_driver_profile(db: Session, user_id: str, driver_data: DriverProfileUpdate) -> User:
+    def update_driver_profile(db: Session, user_id: str, driver_data: DriverProfileUpdate) -> Driver:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -134,7 +175,8 @@ class UserService:
         db.add(user) # Add user and driver_profile to session
         db.commit()
         db.refresh(user)
-        return user
+        db.refresh(user.driver_profile)
+        return user.driver_profile
     
     @staticmethod
     def update_driver_availability(db: Session, user_id: str, is_available: bool) -> User:
