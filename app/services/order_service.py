@@ -4,6 +4,8 @@ from sqlalchemy import UUID
 from sqlalchemy.orm import Session
 from typing import List, Optional # Added Optional
 from decimal import Decimal
+
+from app.models.user_models import Driver
 from ..models.order_models import Order, OrderStatus
 from ..schemas.order_schemas import OrderCreate, OrderAccept, TrackingSessionResponse # Added TrackingSessionResponse
 from ..schemas.user_schemas import DriverLocationResponse # Added DriverLocationResponse
@@ -121,7 +123,7 @@ class OrderService:
         logger.info(f"👨‍💼 Driver ID: {accept_data.driver_id}")
 
         # Check if the driver exists
-        driver = db.query(Driver).filter(Driver.id == accept_data.driver_id).first()
+        driver = db.query(Driver).filter(Driver.driver_id == accept_data.driver_id).first()
         if not driver:
             logger.error(f"❌ Driver not found: {accept_data.driver_id}")
             raise ValueError("Driver not found")

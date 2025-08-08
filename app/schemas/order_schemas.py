@@ -45,7 +45,7 @@ class OrderStatusUpdate(BaseModel):
 
 class OrderAccept(BaseModel):
     driver_id: str
-    estimated_price: Decimal
+    estimated_price: Optional[Decimal] = None
 
 class TrackingSessionResponse(BaseModel):
     session_id: str
