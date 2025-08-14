@@ -51,7 +51,9 @@ class DriverResponse(BaseModel):
     license_no: Optional[str] = None
     vehicle_type: Optional[str] = None
     is_available: bool
-    
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+
     model_config = {"from_attributes": True}
 
 class DriverLocationUpdate(BaseModel):

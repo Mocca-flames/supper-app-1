@@ -1,8 +1,5 @@
 from fastapi import HTTPException, Depends, Header
-from sqlalchemy.orm import Session
-from typing import Optional
-from .firebase_auth import FirebaseAuth
-from sqlalchemy.orm import Session, joinedload # Added joinedload
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from .firebase_auth import FirebaseAuth
 from ..database import get_db

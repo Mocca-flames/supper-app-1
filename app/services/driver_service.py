@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from ..models.order_models import Order
 from ..models.user_models import User, Driver  # Added User and Driver models
@@ -51,13 +52,12 @@ class DriverService:
         """Update driver profile information, excluding availability."""
         user = db.query(User).filter(User.id == driver_id, User.role == "driver").first()
         if not user:
-            return None  # Or raise HTTPException
+            raise HTTPException(status_code=404, detail="Driver not found")
 
         driver_profile = user.driver_profile
         if not driver_profile:
             # This case should ideally not happen if user.role == "driver"
-            # and data is consistent. Consider creating one if it's a valid scenario.
-            return None # Or raise HTTPException
+            raise HTTPException(status_code=404, detail="Driver not found") 
 
         updated_user_data = profile_data.model_dump(exclude_unset=True)
 
@@ -89,7 +89,7 @@ class DriverService:
         """Update driver's availability status"""
         user = db.query(User).filter(User.id == driver_id, User.role == "driver").first()
         if not user or not user.driver_profile:
-            return None # Or raise HTTPException
+            raise HTTPException(status_code=404, detail="Driver profile not found") 
         
         driver_profile = user.driver_profile
         driver_profile.is_available = is_available

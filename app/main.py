@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager # Added for lifespan
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text # Added for text() construct
+from sqlalchemy import text
+
+from app.api import payment_routes # Added for text() construct
 from .database import engine, get_db
 from .models import user_models, order_models, discount_models
 from .auth import firebase_auth  # Initializes Firebase Admin SDK (via app.auth.firebase_auth)
@@ -71,6 +73,7 @@ app.include_router(driver_routes.router, prefix="/api")
 app.include_router(admin_routes.router, prefix="/api")
 app.include_router(order_routes.router, prefix="/api") # Added order_routes
 app.include_router(user_routes.router, prefix="/api") # Added user_routes
+app.include_router(payment_routes.router, prefix="/api") # Added payment_routes
 app.include_router(websocket_routes.router)
 
 @app.get("/")
