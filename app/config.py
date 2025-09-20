@@ -26,4 +26,13 @@ class Settings(BaseSettings):
     
     model_config = SettingsConfigDict(env_file=".env")
 
+
+    # PayFast Payment Gateway Configuration
+    PAYFAST_ENVIRONMENT: str = "sandbox"  # or "production"
+    PAYFAST_MERCHANT_ID: str = "31793961"
+    PAYFAST_MERCHANT_KEY: str = "kuno3nwljlr52"
+    PAYFAST_SANDBOX_URL: str = "https://sandbox.payfast.co.za"
+    PAYFAST_PRODUCTION_URL: str = "https://www.payfast.co.za"
+    
+
 settings = Settings()

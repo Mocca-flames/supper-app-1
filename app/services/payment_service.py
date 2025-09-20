@@ -11,7 +11,10 @@ from ..models.payment_models import Payment, Refund, PaymentStatus, PaymentType
 from ..models.order_models import Order
 from ..schemas.payment_schemas import PaymentCreate, PaymentUpdate, RefundCreate
 from ..utils.redis_client import RedisService
-from ..utils.helpers import MockPaymentProcessor, MockPaymentStatus
+import hashlib
+import requests
+from ..config import settings
+from ..models.user_models import User # Added for fetching user details
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -69,55 +72,57 @@ class PaymentService:
             db.commit()
             db.refresh(payment)
 
-            # Process payment through mock gateway
-            mock_result = MockPaymentProcessor.process_payment(
-                amount=float(payment.amount),
-                currency=payment.currency,
-                payment_method=payment.payment_method.value
-            )
+            # Fetch user details for payment
+            user = db.query(User).filter(User.id == payment_data.user_id).first()
+            if not user:
+                logger.error(f"❌ User not found for payment: {payment_data.user_id}")
+                raise ValueError("User not found for payment")
 
-            # Update payment status based on mock gateway response
-            payment_status = PaymentStatus.FAILED
-            if mock_result["status"] == MockPaymentStatus.SUCCESS:
-                payment_status = PaymentStatus.COMPLETED
+            # Prepare PayFast payment data
+            payfast_environment = settings.PAYFAST_ENVIRONMENT
+            if payfast_environment == "production":
+                base_url = settings.PAYFAST_PRODUCTION_URL
+            else:
+                base_url = settings.PAYFAST_SANDBOX_URL
 
-            # Prepare gateway response details as JSON string
-            gateway_details = {
-                "gateway_response": mock_result["raw_response"],
-                "message": mock_result["message"]
+            merchant_id = settings.PAYFAST_MERCHANT_ID
+            merchant_key = settings.PAYFAST_MERCHANT_KEY
+            passphrase = getattr(settings, "PAYFAST_PASSPHRASE", "")
+
+            # Build payment data dictionary
+            payfast_data = {
+                "merchant_id": merchant_id,
+                "merchant_key": merchant_key,
+                "return_url": settings.PAYFAST_RETURN_URL,
+                "cancel_url": settings.PAYFAST_CANCEL_URL,
+                "name_first": user.first_name,
+                "name_last": user.last_name,
+                "email_address": user.email,
+                "m_payment_id": str(payment.id),
+                "amount": f"{payment.amount:.2f}",
+                "item_name": "Order Payment",
+                "item_description": f"Payment for order {payment.order_id}",
             }
-            
-            # If there were original transaction details, merge them
-            if transaction_details_json:
-                try:
-                    original_details = json.loads(transaction_details_json)
-                    gateway_details.update(original_details)
-                except json.JSONDecodeError:
-                    logger.warning(f"⚠️ Could not parse original transaction details: {transaction_details_json}")
 
-            # Update payment with gateway response
-            payment.status = payment_status
-            payment.transaction_id = mock_result["transaction_id"]
-            payment.transaction_details = json.dumps(gateway_details)
+            # Generate signature
+            def generate_signature(data, passphrase=""):
+                query_string = ""
+                for key in sorted(data.keys()):
+                    value = data[key]
+                    if value is not None and value != "": # Ensure None values are not included
+                        query_string += f"{key}={requests.utils.quote(str(value).strip())}&"
+                query_string = query_string[:-1]
+                if passphrase:
+                    query_string += f"&passphrase={requests.utils.quote(passphrase.strip())}"
+                return hashlib.md5(query_string.encode("utf-8")).hexdigest()
 
-            # Update order payment status and totals
-            if payment_data.payment_type == PaymentType.CLIENT_PAYMENT:
-                if payment_status == PaymentStatus.COMPLETED:
-                    order.total_paid += payment_data.amount
+            signature = generate_signature(payfast_data, passphrase)
+            payfast_data["signature"] = signature
 
-                # Update order payment status
-                total_paid = db.query(func.sum(Payment.amount)).filter(
-                    Payment.order_id == order.id,
-                    Payment.payment_type == PaymentType.CLIENT_PAYMENT,
-                    Payment.status == PaymentStatus.COMPLETED
-                ).scalar() or Decimal("0")
-
-                if total_paid >= order.price:
-                    order.payment_status = PaymentStatus.COMPLETED
-                elif total_paid > 0:
-                    order.payment_status = PaymentStatus.PARTIAL
-                else:
-                    order.payment_status = PaymentStatus.PENDING
+            # For now, mark payment as PENDING and store transaction details
+            payment.status = PaymentStatus.PENDING
+            payment.transaction_id = None # This will be updated by PayFast callback
+            payment.transaction_details = json.dumps(payfast_data)
 
             db.commit()
             db.refresh(payment)
@@ -227,16 +232,9 @@ class PaymentService:
                 logger.error(f"❌ Order not found: {refund_data.order_id}")
                 raise ValueError("Order not found")
 
-            # Process refund through mock gateway
-            mock_result = MockPaymentProcessor.simulate_refund(
-                transaction_id=payment.transaction_id or "",
-                amount=float(refund_data.amount)
-            )
-
-            # Create refund record
-            refund_status = PaymentStatus.FAILED
-            if mock_result["status"] == MockPaymentStatus.SUCCESS:
-                refund_status = PaymentStatus.COMPLETED
+            # TODO: Implement actual PayFast refund API call here
+            # For now, simulate a pending refund
+            refund_status = PaymentStatus.PENDING
 
             refund = Refund(
                 payment_id=refund_data.payment_id,

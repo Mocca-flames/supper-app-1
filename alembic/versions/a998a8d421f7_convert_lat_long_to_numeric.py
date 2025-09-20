@@ -24,18 +24,22 @@ def upgrade() -> None:
     op.alter_column('orders', 'pickup_latitude',
                existing_type=sa.VARCHAR(), # Assuming previous type was VARCHAR
                type_=sa.Numeric(precision=9, scale=6),
+               postgresql_using='pickup_latitude::numeric(9,6)',
                existing_nullable=True)
     op.alter_column('orders', 'pickup_longitude',
                existing_type=sa.VARCHAR(), # Assuming previous type was VARCHAR
                type_=sa.Numeric(precision=9, scale=6),
+               postgresql_using='pickup_longitude::numeric(9,6)',
                existing_nullable=True)
     op.alter_column('orders', 'dropoff_latitude',
                existing_type=sa.VARCHAR(), # Assuming previous type was VARCHAR
                type_=sa.Numeric(precision=9, scale=6),
+               postgresql_using='dropoff_latitude::numeric(9,6)',
                existing_nullable=True)
     op.alter_column('orders', 'dropoff_longitude',
                existing_type=sa.VARCHAR(), # Assuming previous type was VARCHAR
                type_=sa.Numeric(precision=9, scale=6),
+               postgresql_using='dropoff_longitude::numeric(9,6)',
                existing_nullable=True)
     # ### end Alembic commands ###
 

@@ -1,0 +1,47 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Credit Card Test - PayFast</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .submit-btn { background: #007bff; color: white; padding: 15px 30px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; }
+        .submit-btn:hover { background: #0056b3; }
+        .info { background: #e3f2fd; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Credit Card Test</h1>
+        <div class="info">
+            <strong>Test Mode:</strong> This is a sandbox payment. No real money will be charged.
+        </div>
+        <form action="https://sandbox.payfast.co.za/eng/process" method="post">
+            <input type="hidden" name="merchant_id" value="31793961">
+            <input type="hidden" name="merchant_key" value="kuno3nwljlr52">
+            <input type="hidden" name="return_url" value="https://your-site.com/return">
+            <input type="hidden" name="cancel_url" value="https://your-site.com/cancel">
+            <input type="hidden" name="notify_url" value="https://your-site.com/notify">
+            <input type="hidden" name="name_first" value="John">
+            <input type="hidden" name="name_last" value="Doe">
+            <input type="hidden" name="email_address" value="test@example.com">
+            <input type="hidden" name="cell_number" value="0123456789">
+            <input type="hidden" name="m_payment_id" value="TEST_20250920073610">
+            <input type="hidden" name="amount" value="100.00">
+            <input type="hidden" name="item_name" value="Credit Card Test Payment">
+            <input type="hidden" name="item_description" value="Test payment for Credit Card Test Payment">
+            <input type="hidden" name="custom_int1" value="12345">
+            <input type="hidden" name="custom_str1" value="Test Payment">
+            <input type="hidden" name="payment_method" value="cc">
+            <input type="hidden" name="signature" value="9ff48a4fdbeb7082da4e834ee4af37da">
+
+            <button type="submit" class="submit-btn">Proceed to Payment</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -12,3 +12,6 @@ pydantic[email]==2.5.0
 pydantic-settings
 python-dotenv>=0.21.0 # For loading .env files
 websockets==13.0
+httpx==0.28.1 # For HTTP requests to PayFast API
+pytest==8.2.2
+pytest-asyncio==0.23.7

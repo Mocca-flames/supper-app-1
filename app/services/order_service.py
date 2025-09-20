@@ -502,6 +502,8 @@ class OrderService:
         Raises:
             ValueError: If client_id is invalid or deletion fails
         """
+        from ..models.payment_models import Payment, Refund
+
         if not client_id or not isinstance(client_id, str):
             logger.error(f"❌ Invalid client_id provided: {client_id}")
             raise ValueError("client_id must be a non-empty string")
@@ -512,6 +514,8 @@ class OrderService:
             "client_id": client_id,
             "orders_found": 0,
             "orders_deleted": 0,
+            "payments_deleted": 0,
+            "refunds_deleted": 0,
             "success": False,
             "error": None
         }
@@ -528,17 +532,19 @@ class OrderService:
                 deletion_summary["success"] = True
                 return deletion_summary
             
-            # Bulk delete (most efficient for large datasets)
-            deleted_count = db.query(Order).filter(Order.client_id == client_id).delete()
-            
-            logger.info(f"🗑️ Bulk deleted {deleted_count} orders")
+            # Delete orders. ON DELETE CASCADE will handle associated payments and refunds.
+            deleted_count = db.query(Order).filter(Order.client_id == client_id).delete(synchronize_session=False)
             deletion_summary["orders_deleted"] = deleted_count
+            # Assuming cascade deletes, payments and refunds will be deleted implicitly
+            deletion_summary["payments_deleted"] = deleted_count
+            deletion_summary["refunds_deleted"] = deleted_count
+            logger.info(f"🗑️ Deleted {deleted_count} orders (and cascaded payments/refunds) for client {client_id}")
             
             # Commit the transaction
             logger.info("💾 Committing deletions to database...")
             db.commit()
             
-            logger.info(f"✅ Successfully deleted {deleted_count} orders for client {client_id}")
+            logger.info(f"✅ Successfully deleted orders, payments, and refunds for client {client_id}")
             deletion_summary["success"] = True
             
             return deletion_summary
