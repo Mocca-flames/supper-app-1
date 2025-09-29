@@ -4,10 +4,12 @@ from typing import List, Dict # Added Dict
 from ..database import get_db
 from ..services.order_service import OrderService
 from ..services.user_service import UserService # Added UserService
-from ..schemas.order_schemas import OrderCreate, OrderResponse
+from ..schemas.order_schemas import OrderCreate, OrderResponse, OrderUpdate
 from ..schemas.user_schemas import DriverLocationResponse, ClientProfileUpdate, ClientResponse # Added ClientProfileUpdate, ClientResponse
 from ..auth.middleware import get_current_user, get_current_client # get_current_client might be used by other routes
 from ..utils.redis_client import RedisService # Added RedisService
+from ..models.order_models import Order
+from ..models.payment_models import PaymentStatus
 
 router = APIRouter(prefix="/client", tags=["Client"])
 
@@ -34,17 +36,46 @@ def get_my_orders(
 @router.get("/orders/{order_id}", response_model=OrderResponse)
 def get_order_details(
     order_id: str,
-    current_user = Depends(get_current_user), 
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get specific order details"""
     orders = OrderService.get_client_orders(db, current_user.id)
     order = next((o for o in orders if o.id == order_id), None)
-    
+
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     return order
+
+@router.put("/orders/{order_id}", response_model=OrderResponse)
+def update_order(
+    order_id: str,
+    order_data: OrderUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update order information (payment status, special instructions, etc.)"""
+    try:
+        # Verify the order belongs to the current user
+        order = db.query(Order).filter(Order.id == order_id, Order.client_id == current_user.id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found or access denied")
+
+        # Update only the allowed fields
+        if order_data.payment_status is not None:
+            order.payment_status = order_data.payment_status
+
+        if order_data.special_instructions is not None:
+            order.special_instructions = order_data.special_instructions
+
+        db.commit()
+        db.refresh(order)
+
+        return order
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating order: {str(e)}")
 
 @router.get("/driver/{driver_id}/location", response_model=DriverLocationResponse)
 def get_driver_location_route( # Renamed to avoid conflict if a similar schema exists

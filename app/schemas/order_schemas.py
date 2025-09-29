@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 from decimal import Decimal
 from ..models.order_models import OrderType, OrderStatus
+from ..models.payment_models import PaymentStatus
 
 class OrderCreate(BaseModel):
     order_type: OrderType
@@ -53,3 +54,7 @@ class TrackingSessionResponse(BaseModel):
     status: str  # e.g., "active", "pending_driver_acceptance"
     message: Optional[str] = None
     # Potentially add driver_id, current_location if available at session start
+
+class OrderUpdate(BaseModel):
+    payment_status: Optional[PaymentStatus] = None
+    special_instructions: Optional[str] = None

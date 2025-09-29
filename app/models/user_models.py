@@ -29,7 +29,7 @@ class Client(Base):
     
     # Relationships
     user = relationship("User", back_populates="client_profile")
-    # orders relationship removed as it's now on User
+  
 
 class Driver(Base):
     __tablename__ = "drivers"
