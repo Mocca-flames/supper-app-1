@@ -7,9 +7,9 @@ from sqlalchemy import text
 
 from app.api import payment_routes # Added for text() construct
 from .database import engine, get_db
-from .models import user_models, order_models, discount_models
+from .models import user_models, order_models, discount_models, rating_models
 from .auth import firebase_auth  # Initializes Firebase Admin SDK (via app.auth.firebase_auth)
-from .api import auth_routes, client_routes, driver_routes, admin_routes, websocket_routes, order_routes, user_routes # Added user_routes
+from .api import auth_routes, client_routes, driver_routes, admin_routes, websocket_routes, order_routes, user_routes, rating_routes # Added user_routes, rating_routes
 from .utils.redis_client import redis_client
 from .config import settings
 import uvicorn
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 user_models.Base.metadata.create_all(bind=engine)
 order_models.Base.metadata.create_all(bind=engine)
 discount_models.Base.metadata.create_all(bind=engine)
+rating_models.Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,6 +75,7 @@ app.include_router(admin_routes.router, prefix="/api")
 app.include_router(order_routes.router, prefix="/api") # Added order_routes
 app.include_router(user_routes.router, prefix="/api") # Added user_routes
 app.include_router(payment_routes.router, prefix="/api") # Added payment_routes
+app.include_router(rating_routes.router, prefix="/api") # Added rating_routes
 app.include_router(websocket_routes.router)
 
 @app.get("/")
