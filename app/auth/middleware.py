@@ -17,7 +17,7 @@ def get_current_user(
         # Expected format: "Bearer <token>"
         token = authorization.split(" ")[1]
         firebase_uid = FirebaseAuth.verify_firebase_token(token)
-        
+    
         # Get user from database, eagerly loading client and driver profiles
         user = db.query(User).options(
             joinedload(User.client_profile),
@@ -51,3 +51,12 @@ def get_current_driver(
 
 # Removed get_approved_driver as approval is no longer required for V1.
 # Driver routes will now use get_current_driver directly.
+
+def get_current_user_id(current_user: User = Depends(get_current_user)) -> str:
+    """Get the ID of the current authenticated user."""
+    return current_user.id
+
+def get_current_client_id(client_profile = Depends(get_current_client)) -> str:
+    """Get the ID of the current authenticated client."""
+    # Assuming client_profile object has a user_id attribute which is the client ID
+    return client_profile.user_id

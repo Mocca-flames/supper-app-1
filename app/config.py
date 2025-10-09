@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     PAYFAST_MERCHANT_KEY: str = "kuno3nwljlr52"
     PAYFAST_SANDBOX_URL: str = "https://sandbox.payfast.co.za"
     PAYFAST_PRODUCTION_URL: str = "https://www.payfast.co.za"
-    
 
+    # Paystack Payment Gateway Configuration
+    PAYSTACK_SECRET_KEY: str = "sk_test_your_paystack_secret_key"
+    PAYSTACK_PUBLIC_KEY: str = "pk_test_your_paystack_public_key"
+    PAYSTACK_ENVIRONMENT: str = "sandbox"  # or "production"
+
+
+# Create a singleton instance of Settings
 settings = Settings()

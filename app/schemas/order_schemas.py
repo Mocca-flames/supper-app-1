@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 from ..models.order_models import OrderType, OrderStatus
@@ -57,4 +57,32 @@ class TrackingSessionResponse(BaseModel):
 
 class OrderUpdate(BaseModel):
     payment_status: Optional[PaymentStatus] = None
+class OrderEstimateRequest(BaseModel):
+    service_type: str  # "rideshare", "medical_transport", "food_delivery", "product_delivery"
+    pickup_latitude: float
+    pickup_longitude: float
+    dropoff_latitude: float
+    dropoff_longitude: float
+    passenger_count: Optional[int] = None
+    vehicle_type: Optional[str] = None
+    mobility_needs: Optional[List[str]] = None
+    transport_type: Optional[str] = None
+    package_size: Optional[str] = None
+    delivery_time_preference: Optional[str] = None
+
+class EstimateDetails(BaseModel):
+    base_fare: float
+    distance_fare: float
+    service_fee: float
+    total: float
+    estimated_duration_minutes: int
+    currency: str
+    surge_multiplier: float
+    medical_surcharge: float
+    package_surcharge: float
+    delivery_fee: float
+
+class CostEstimationResponse(BaseModel):
+    estimate: EstimateDetails
+    valid_until: str  # ISO 8601 datetime string
     special_instructions: Optional[str] = None

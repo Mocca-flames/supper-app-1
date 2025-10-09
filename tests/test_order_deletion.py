@@ -18,7 +18,7 @@ def setup_orders_payments(db: Session):
     order1 = Order(
         id="order-1",
         client_id=user.id,
-        order_type="ride",
+        order_type="ride_hailing",
         pickup_address="123 Test St",
         dropoff_address="456 Test Ave",
         distance_km=Decimal("10.0"),

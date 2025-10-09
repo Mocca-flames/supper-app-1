@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 import logging
 import json
 
-from ..models.payment_models import Payment, Refund, PaymentStatus, PaymentType
+from ..models.payment_models import Payment, Refund, PaymentStatus, PaymentType, PaymentGateway
 from ..models.order_models import Order
 from ..schemas.payment_schemas import PaymentCreate, PaymentUpdate, RefundCreate
 from ..utils.redis_client import RedisService
@@ -63,6 +63,7 @@ class PaymentService:
                 amount=payment_data.amount,
                 currency=payment_data.currency,
                 payment_method=payment_data.payment_method,
+                gateway=payment_data.gateway,
                 status=PaymentStatus.PENDING,
                 transaction_id=payment_data.transaction_id,
                 transaction_details=transaction_details_json

@@ -7,20 +7,120 @@ import httpx # Added for HTTP requests to PayFast API
 import hashlib # Added for MD5 signature generation
 import urllib.parse # Added for URL encoding
 from datetime import datetime # Added for timestamp generation
+import logging # Added for logging
 
 from ..database import get_db
 from ..services.payment_service import PaymentService
 from ..schemas.payment_schemas import PaymentCreate, PaymentResponse, PaymentUpdate, RefundCreate, RefundResponse
 from ..auth.middleware import get_current_user
 from ..schemas.user_schemas import UserResponse
-from ..models.payment_models import PaymentType
+from ..models.payment_models import PaymentStatus, PaymentType, PaymentGateway
 from ..models.order_models import Order
 from ..config import settings # Added for settings
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/payments",
     tags=["Payments"]
 )
+
+@router.post("/paystack/initialize")
+def initialize_paystack_payment(
+    payment_data: PaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Initialize a Paystack payment transaction.
+    Creates payment record and calls Paystack API to get access_code for frontend.
+    """
+    try:
+        # Override gateway to Paystack
+        payment_data.gateway = PaymentGateway.PAYSTACK
+
+        # For client payments, ensure the user is the client
+        if payment_data.payment_type == PaymentType.CLIENT_PAYMENT:
+            order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+
+            if order.client_id != current_user.id and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Not authorized to create payment for this order")
+
+        # For driver payments, ensure the user is the driver or admin
+        elif payment_data.payment_type == PaymentType.DRIVER_PAYMENT:
+            order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+
+            if order.driver_id != current_user.id and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Not authorized to create payment for this order")
+
+        # Create payment record
+        payment = PaymentService.create_payment(db, payment_data, order)
+
+        # Get user details for Paystack
+        order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+        if payment_data.payment_type == PaymentType.CLIENT_PAYMENT:
+            user_id = order.client_id
+        else:
+            user_id = order.driver_id
+
+        from ..models.user_models import User
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Prepare Paystack initialization data
+        paystack_data = {
+            "email": user.email,
+            "amount": int(payment.amount * 100),  # Convert to kobo (multiply by 100)
+            "currency": payment.currency,
+            "reference": payment.id,  # Use payment ID as reference
+            "callback_url": getattr(settings, "PAYSTACK_CALLBACK_URL", "http://localhost:3000/payment/callback")
+        }
+
+        # Call Paystack API
+        paystack_secret_key = settings.PAYSTACK_SECRET_KEY
+        headers = {
+            "Authorization": f"Bearer {paystack_secret_key}",
+            "Content-Type": "application/json"
+        }
+
+        with httpx.Client() as client:
+            response = client.post(
+                "https://api.paystack.co/transaction/initialize",
+                json=paystack_data,
+                headers=headers,
+                timeout=30.0
+            )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Paystack API error: {response.text}")
+
+        paystack_response = response.json()
+        if not paystack_response.get("status"):
+            raise HTTPException(status_code=502, detail=f"Paystack initialization failed: {paystack_response}")
+
+        access_code = paystack_response["data"]["access_code"]
+
+        # Update payment with Paystack reference
+        payment.transaction_id = paystack_response["data"]["reference"]
+        payment.transaction_details = json.dumps(paystack_response["data"])
+        db.commit()
+
+        return {
+            "payment": payment,
+            "access_code": access_code,
+            "authorization_url": paystack_response["data"]["authorization_url"]
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error initializing Paystack payment")
 
 @router.post("/create", response_model=PaymentResponse)
 
@@ -54,25 +154,33 @@ def create_payment(
 
         payment = PaymentService.create_payment(db, payment_data, order)
 
-        # Return payment with payment gateway redirect URL or instructions
-        payfast_environment = os.getenv("PAYFAST_ENVIRONMENT", "sandbox")
-        if payfast_environment == "production":
-            base_url = os.getenv("PAYFAST_PRODUCTION_URL", "https://www.payfast.co.za")
+        # Handle different gateways
+        if payment.gateway == PaymentGateway.PAYFAST:
+            # Return payment with payment gateway redirect URL or instructions
+            payfast_environment = os.getenv("PAYFAST_ENVIRONMENT", "sandbox")
+            if payfast_environment == "production":
+                base_url = os.getenv("PAYFAST_PRODUCTION_URL", "https://www.payfast.co.za")
+            else:
+                base_url = os.getenv("PAYFAST_SANDBOX_URL", "https://sandbox.payfast.co.za")
+
+            # The payment.transaction_details contains the form data for PayFast
+            form_data = json.loads(payment.transaction_details or "{}")
+
+            # Construct the form action URL
+            payment_url = f"{base_url}/eng/process"
+
+            # Return payment info along with payment_url and form_data for frontend to submit
+            return {
+                "payment": payment,
+                "payment_url": payment_url,
+                "form_data": form_data
+            }
+        elif payment.gateway == PaymentGateway.PAYSTACK:
+            # For Paystack, client should use /paystack/initialize endpoint
+            raise HTTPException(status_code=400, detail="Use /payments/paystack/initialize for Paystack payments")
         else:
-            base_url = os.getenv("PAYFAST_SANDBOX_URL", "https://sandbox.payfast.co.za")
-
-        # The payment.transaction_details contains the form data for PayFast
-        form_data = json.loads(payment.transaction_details or "{}")
-
-        # Construct the form action URL
-        payment_url = f"{base_url}/eng/process"
-
-        # Return payment info along with payment_url and form_data for frontend to submit
-        return {
-            "payment": payment,
-            "payment_url": payment_url,
-            "form_data": form_data
-        }
+            # Default response for other gateways
+            return {"payment": payment}
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -285,3 +393,121 @@ def query_payfast_transaction(
         raise HTTPException(status_code=502, detail=f"PayFast API request failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying PayFast transaction: {str(e)}")
+
+@router.post("/paystack/webhook")
+def paystack_webhook(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Paystack webhook notifications for payment verification.
+    Paystack sends this when a transaction is completed.
+    """
+    try:
+        # Verify webhook signature (recommended for production)
+        # For now, we'll trust the request
+
+        event = request.get("event")
+        data = request.get("data", {})
+
+        if event == "charge.success":
+            reference = data.get("reference")
+            status = data.get("status")
+            amount = data.get("amount")  # in kobo
+
+            if status == "success":
+                # Find payment by reference
+                payment = PaymentService.get_payment_by_id(db, reference)
+                if payment and payment.gateway == PaymentGateway.PAYSTACK:
+                    # Verify amount matches
+                    expected_amount_kobo = int(payment.amount * 100)
+                    if amount == expected_amount_kobo:
+                        # Update payment status
+                        PaymentService.update_payment_status(
+                            db,
+                            payment.id,
+                            PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=reference)
+                        )
+                        return {"status": "success"}
+                    else:
+                        logger.error(f"Amount mismatch for payment {payment.id}: expected {expected_amount_kobo}, got {amount}")
+                else:
+                    logger.error(f"Payment not found or not Paystack: {reference}")
+
+        return {"status": "ignored"}
+
+    except Exception as e:
+        logger.error(f"Error processing Paystack webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing webhook")
+
+@router.get("/paystack/verify/{reference}")
+def verify_paystack_payment(
+    reference: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Manually verify a Paystack payment using the transaction reference.
+    """
+    try:
+        # Find payment by reference
+        payment = PaymentService.get_payment_by_id(db, reference)
+        if not payment or payment.gateway != PaymentGateway.PAYSTACK:
+            raise HTTPException(status_code=404, detail="Payment not found or not a Paystack payment")
+
+        # Check authorization
+        if payment.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Not authorized to verify this payment")
+
+        # Call Paystack verify API
+        paystack_secret_key = settings.PAYSTACK_SECRET_KEY
+        headers = {
+            "Authorization": f"Bearer {paystack_secret_key}",
+            "Content-Type": "application/json"
+        }
+
+        with httpx.Client() as client:
+            response = client.get(
+                f"https://api.paystack.co/transaction/verify/{reference}",
+                headers=headers,
+                timeout=30.0
+            )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Paystack API error: {response.text}")
+
+        paystack_response = response.json()
+        if not paystack_response.get("status"):
+            raise HTTPException(status_code=502, detail=f"Paystack verification failed: {paystack_response}")
+
+        data = paystack_response.get("data", {})
+        status = data.get("status")
+        amount = data.get("amount")  # in kobo
+
+        if status == "success":
+            # Verify amount
+            expected_amount_kobo = int(payment.amount * 100)
+            if amount == expected_amount_kobo:
+                # Update payment status
+                PaymentService.update_payment_status(
+                    db,
+                    payment.id,
+                    PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=reference)
+                )
+                return {"status": "verified", "payment": payment}
+            else:
+                return {"status": "amount_mismatch", "expected": expected_amount_kobo, "received": amount}
+        else:
+            # Update to failed if not already completed
+            if payment.status != PaymentStatus.COMPLETED:
+                PaymentService.update_payment_status(
+                    db,
+                    payment.id,
+                    PaymentUpdate(status=PaymentStatus.FAILED, transaction_id=reference)
+                )
+            return {"status": "failed", "payment": payment}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error verifying Paystack payment: {str(e)}")

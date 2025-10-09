@@ -23,6 +23,10 @@ class PaymentMethod(enum.Enum):
     CASH = "cash"
     OTHER = "other"
 
+class PaymentGateway(enum.Enum):
+    PAYFAST = "payfast"
+    PAYSTACK = "paystack"
+
 class Payment(Base):
     __tablename__ = "payments"
 
@@ -33,6 +37,7 @@ class Payment(Base):
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String, default="ZAR")
     payment_method = Column(Enum(PaymentMethod), nullable=False)
+    gateway = Column(Enum(PaymentGateway), nullable=False, default=PaymentGateway.PAYFAST)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
     transaction_id = Column(String, nullable=True)  # External transaction ID
     transaction_details = Column(Text, nullable=True)  # JSON string for additional details

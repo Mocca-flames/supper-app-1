@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import uuid
 import logging
 from fastapi import HTTPException
-from sqlalchemy import UUID, func
+from sqlalchemy import UUID, func, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from typing import Any, Dict, List, Optional
@@ -76,7 +76,7 @@ class OrderService:
             logger.info("🏗️ Creating Order object...")
             order = Order(
                 client_id=order_data.client_id,
-                order_type=order_data.order_type,
+                order_type=order_data.order_type.value,
                 pickup_address=order_data.pickup_address,
                 pickup_latitude=order_data.pickup_latitude,
                 pickup_longitude=order_data.pickup_longitude,
@@ -268,9 +268,30 @@ class OrderService:
         """Get all orders for a specific client"""
         logger.info(f"🔍 Fetching orders for client: {client_id}")
         try:
-            orders = db.query(Order).filter(Order.client_id == client_id).all()
-            logger.info(f"📋 Found {len(orders)} orders for client {client_id}")
-            return orders
+            try:
+                orders = db.query(Order).filter(Order.client_id == client_id).all()
+                logger.info(f"📋 Found {len(orders)} orders for client {client_id}")
+                return orders
+            except LookupError as e:
+                logger.error(f"❌ Enum decoding error fetching client orders: {str(e)}")
+                # Diagnostic: inspect raw enum values in DB to validate mismatch
+                try:
+                    diag_rows = db.execute(
+                        text(
+                            "SELECT order_type::text AS order_type, COUNT(*) AS cnt "
+                            "FROM orders WHERE client_id = :cid GROUP BY order_type::text"
+                        ),
+                        {"cid": client_id}
+                    ).fetchall()
+                    if diag_rows:
+                        distinct_vals = ", ".join([f"{row[0]}({row[1]})" for row in diag_rows])
+                    else:
+                        distinct_vals = "none"
+                    logger.error(f"🧪 Enum diagnostics - distinct order_type values for client {client_id}: {distinct_vals}")
+                except Exception as diag_ex:
+                    logger.error(f"⚠️ Enum diagnostics failed: {diag_ex}")
+                # Re-raise as ValueError to keep service contract consistent
+                raise ValueError("OrderType enum mismatch between DB and application. See logs for diagnostics.") from e
         except SQLAlchemyError as e:
             logger.error(f"❌ Database error fetching client orders: {str(e)}")
             raise ValueError(f"Error fetching client orders: {str(e)}") from e

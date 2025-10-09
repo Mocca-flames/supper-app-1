@@ -8,7 +8,7 @@ from ..database import Base
 from ..models.payment_models import PaymentStatus
 
 class OrderType(enum.Enum):
-    RIDE = "ride"
+    RIDE = "ride_hailing"
     FOOD_DELIVERY = "food_delivery"
     PARCEL_DELIVERY = "parcel_delivery"
     MEDICAL_PRODUCT = "medical_product"
@@ -30,7 +30,7 @@ class Order(Base):
     client_id = Column(String, ForeignKey("users.id"), nullable=False)  # Changed ForeignKey to users.id
     driver_id = Column(String, ForeignKey("drivers.driver_id"), nullable=True)
 
-    order_type = Column(Enum(OrderType), nullable=False)
+    order_type = Column(Enum(OrderType, values_callable=lambda e: [x.value for x in e], name="ordertype"), nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING)
 
     pickup_address = Column(Text, nullable=False)

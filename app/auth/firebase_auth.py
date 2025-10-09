@@ -4,6 +4,15 @@ from fastapi import HTTPException
 from ..config import settings
 
 # Initialize Firebase Admin SDK
+try:
+    # Try to get the default app - if it exists, delete it first
+    firebase_admin.get_app()
+    firebase_admin.delete_app(firebase_admin.get_app())
+except ValueError:
+    # App doesn't exist, which is fine
+    pass
+
+# Initialize with new credentials
 cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
 firebase_admin.initialize_app(cred)
 

@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
-from ..models.payment_models import PaymentType, PaymentStatus, PaymentMethod
+from ..models.payment_models import PaymentType, PaymentStatus, PaymentMethod, PaymentGateway
 
 class PaymentCreate(BaseModel):
     order_id: str
@@ -11,6 +11,7 @@ class PaymentCreate(BaseModel):
     amount: Decimal
     currency: str = "ZAR"
     payment_method: PaymentMethod
+    gateway: PaymentGateway = PaymentGateway.PAYFAST
     transaction_id: Optional[str] = None
     transaction_details: Optional[dict] = None
 
@@ -22,6 +23,7 @@ class PaymentResponse(BaseModel):
     amount: Decimal
     currency: str
     payment_method: PaymentMethod
+    gateway: PaymentGateway
     status: PaymentStatus
     transaction_id: Optional[str] = None
     created_at: datetime

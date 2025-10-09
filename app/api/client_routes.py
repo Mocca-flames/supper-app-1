@@ -4,7 +4,8 @@ from typing import List, Dict # Added Dict
 from ..database import get_db
 from ..services.order_service import OrderService
 from ..services.user_service import UserService # Added UserService
-from ..schemas.order_schemas import OrderCreate, OrderResponse, OrderUpdate
+from ..services.pricing_service import PricingService # Added PricingService
+from ..schemas.order_schemas import OrderCreate, OrderResponse, OrderUpdate, OrderEstimateRequest, CostEstimationResponse
 from ..schemas.user_schemas import DriverLocationResponse, ClientProfileUpdate, ClientResponse # Added ClientProfileUpdate, ClientResponse
 from ..auth.middleware import get_current_user, get_current_client # get_current_client might be used by other routes
 from ..utils.redis_client import RedisService # Added RedisService
@@ -23,6 +24,20 @@ def create_order(
     order_data.client_id = current_user.id  # Use current_user.id (Firebase UID)
     order = OrderService.create_order(db, order_data)
     return order
+
+@router.post("/orders/estimate", response_model=CostEstimationResponse)
+def estimate_order_cost(
+    estimate_request: OrderEstimateRequest,
+    current_user = Depends(get_current_user)
+):
+    """Calculate and return the estimated price and distance for a potential order"""
+    try:
+        estimation = PricingService.estimate_order_cost(estimate_request)
+        return estimation
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while calculating estimate.")
 
 @router.get("/orders", response_model=List[OrderResponse])
 def get_my_orders(

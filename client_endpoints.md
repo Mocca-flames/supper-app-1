@@ -431,25 +431,31 @@
 
 ### Register User
 **POST** `/api/auth/register`
-- **Query Params**: `firebase_uid` (string, required), `user_type` = `"client"` (required)
-- **Response**: `200 OK` with `UserResponse` JSON
+- **Request Body**: JSON object with required fields:
+  - `firebase_uid` (string, required)
+  - `user_type` (string, required, e.g., `"client"` or `"driver"`)
+- **Example Request Body**:
 ```json
 {
-  "id": "string",
-  "email": "string",
-  "full_name": "string",
-  "phone_number": "string",
-  "role": "client",
-  "created_at": "2023-10-27T10:00:00Z",
-  "client_profile": {
-    "client_id": "string",
-    "home_address": "string",
-    "is_verified": true
-  },
-  "driver_profile": null
+  "firebase_uid": "rFbbyZGZ0zgxnpoosw219ONNrXt2",
+  "user_type": "client"
 }
 ```
+- **Response**: `200 OK` with `UserResponse` JSON
+### Important Notes on /api/auth/register
+- This endpoint requires a POST request with parameters sent in the JSON body.
+- Sending `firebase_uid` and `user_type` as query parameters will result in errors such as:
+  - `422 Unprocessable Entity` indicating missing fields in the query parameters.
+  - Or a `404 Not Found` error.
+- Ensure your client sends the data in the request body as JSON, not as query parameters.
+- This endpoint does not require an `Authorization` header.
 
+### Example curl Request
+```bash
+curl -X POST https://your-api-domain.com/api/auth/register \
+-H "Content-Type: application/json" \
+-d '{"firebase_uid": "rFbbyZGZ0zgxnpoosw219ONNrXt2", "user_type": "client"}'
+```
 ### Create Client Profile
 **POST** `/api/auth/client-profile`
 - **Headers**: `Authorization` (Bearer token)

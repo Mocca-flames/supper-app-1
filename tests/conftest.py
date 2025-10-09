@@ -32,4 +32,11 @@ def client():
     Base.metadata.create_all(bind=engine)
     with TestClient(app) as c:
         yield c
+@pytest.fixture
+def db():
+    try:
+        db = TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
     Base.metadata.drop_all(bind=engine)
