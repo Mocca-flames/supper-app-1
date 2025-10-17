@@ -87,7 +87,6 @@ def initialize_paystack_payment(
             "amount": amount_kobo,
             "currency": payment.currency,
             "reference": payment.id,  # Use payment ID as reference
-            "callback_url": getattr(settings, "PAYSTACK_CALLBACK_URL", " https://ae60d6ed40ea.ngrok-free.app/api/payments/callback")
         }
 
         # Call Paystack API
