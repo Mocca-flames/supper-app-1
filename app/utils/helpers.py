@@ -1,6 +1,7 @@
 import random
 from enum import Enum
 from typing import Optional, Dict, Any
+from math import radians, cos, sin, asin, sqrt
 
 class MockPaymentStatus(str, Enum):
     """Mock payment statuses to simulate gateway responses"""
@@ -113,3 +114,29 @@ class MockPaymentProcessor:
                     ])
                 }
             }
+
+
+def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate the great circle distance between two points
+    on the earth (specified in decimal degrees) in kilometers.
+
+    Args:
+        lat1: Latitude of point 1
+        lon1: Longitude of point 1
+        lat2: Latitude of point 2
+        lon2: Longitude of point 2
+
+    Returns:
+        Distance in kilometers
+    """
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    r = 6371  # Radius of earth in kilometers. Use 3956 for miles.
+    return c * r

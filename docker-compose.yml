@@ -45,5 +45,20 @@ services:
       timeout: 5s
       retries: 5
 
+  notification-worker:
+    build: .
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python notification_worker.py
+    restart: unless-stopped
+
 volumes:
   postgres_data: {}

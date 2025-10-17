@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.models.order_models import Order, OrderStatus # Added HTTPException
 from ..models.user_models import User, Client, Driver
-from ..schemas.user_schemas import UserCreate, ClientCreate, DriverCreate, UserProfileUpdate, ClientProfileUpdate, DriverProfileUpdate # Added update schemas
+from ..schemas.user_schemas import UserCreate, ClientCreate, DriverCreate, UserProfileUpdate, ClientProfileUpdate, DriverProfileUpdate, FCMTokenUpdate # Added update schemas
 from ..auth.firebase_auth import FirebaseAuth
 
 logger = logging.getLogger(__name__) # Added logger instance
@@ -58,10 +58,23 @@ class UserService:
                 if existing_user.full_name != firebase_user.get("display_name"):
                     existing_user.full_name = firebase_user.get("display_name")
                     logger.info(f"Updating full_name for email {user_email}")
-                if existing_user.phone_number != firebase_user.get("phone_number"):
-                    existing_user.phone_number = firebase_user.get("phone_number")
-                    logger.info(f"Updating phone_number for email {user_email}")
-
+                firebase_phone_number = firebase_user.get("phone_number")
+                logger.info(f"Existing phone_number for {user_email}: {existing_user.phone_number}. Firebase phone_number: {firebase_phone_number}")
+                
+                # Only update phone_number if the Firebase value is not None AND it's different from the existing value.
+                # OR if the existing value is None and the Firebase value is not None.
+                # However, for this bug, we must ensure we DO NOT overwrite a non-null DB value with a null Firebase value.
+                if firebase_phone_number is not None and existing_user.phone_number != firebase_phone_number:
+                    existing_user.phone_number = firebase_phone_number
+                    logger.info(f"Updating phone_number for email {user_email} to {firebase_phone_number}")
+                elif existing_user.phone_number is not None and firebase_phone_number is None:
+                    # Log the potential overwrite but DO NOT perform the update yet.
+                    logger.info(f"Skipping phone_number update for {user_email}: DB value is present, Firebase value is None. Retaining DB value.")
+                elif existing_user.phone_number is None and firebase_phone_number is not None:
+                    # If DB is null but Firebase has a value, update it.
+                    existing_user.phone_number = firebase_phone_number
+                    logger.info(f"Updating phone_number for email {user_email} from None to {firebase_phone_number}")
+                
                 db.add(existing_user)
                 db.commit()
                 db.refresh(existing_user)
@@ -88,10 +101,24 @@ class UserService:
     def update_user_profile(db: Session, user_id: str, user_data: UserProfileUpdate) -> User:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
-            raise HTTPException(status_code=404, detail=f"User not found: {user_id}") 
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
 
         for field, value in user_data.model_dump(exclude_unset=True).items():
             setattr(user, field, value)
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def update_fcm_token(db: Session, user_id: str, fcm_token_data: FCMTokenUpdate) -> User:
+        """Update the FCM token for a user."""
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User not found: {user_id}")
+
+        user.fcm_token = fcm_token_data.fcmToken
 
         db.add(user)
         db.commit()

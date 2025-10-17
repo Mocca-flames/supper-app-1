@@ -38,6 +38,7 @@ COPY ./alembic/ /app/alembic/
 COPY alembic.ini .
 COPY firebase.json .
 COPY .env .
+COPY notification_worker.py .
 
 # Expose port for FastAPI application
 EXPOSE 8000

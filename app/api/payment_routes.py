@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json # Added for json.loads
@@ -74,37 +74,68 @@ def initialize_paystack_payment(
             raise HTTPException(status_code=404, detail="User not found")
 
         # Prepare Paystack initialization data
+        logger.info(f"Paystack init: payment.amount type={type(payment.amount)}, value={payment.amount}")
+        
+        try:
+            amount_kobo = int(payment.amount * 100)  # Convert to kobo (multiply by 100)
+        except Exception as e:
+            logger.error(f"❌ Error converting amount to kobo: {e}")
+            raise HTTPException(status_code=500, detail=f"Internal error: Failed to convert amount for Paystack. {e}")
+
         paystack_data = {
             "email": user.email,
-            "amount": int(payment.amount * 100),  # Convert to kobo (multiply by 100)
+            "amount": amount_kobo,
             "currency": payment.currency,
             "reference": payment.id,  # Use payment ID as reference
-            "callback_url": getattr(settings, "PAYSTACK_CALLBACK_URL", "http://localhost:3000/payment/callback")
+            "callback_url": getattr(settings, "PAYSTACK_CALLBACK_URL", " https://ae60d6ed40ea.ngrok-free.app/api/payments/callback")
         }
 
         # Call Paystack API
-        paystack_secret_key = settings.PAYSTACK_SECRET_KEY
-        headers = {
-            "Authorization": f"Bearer {paystack_secret_key}",
-            "Content-Type": "application/json"
-        }
+        try:
+            paystack_secret_key = settings.PAYSTACK_SECRET_KEY
+            headers = {
+                "Authorization": f"Bearer {paystack_secret_key}",
+                "Content-Type": "application/json"
+            }
 
-        with httpx.Client() as client:
-            response = client.post(
-                "https://api.paystack.co/transaction/initialize",
-                json=paystack_data,
-                headers=headers,
-                timeout=30.0
-            )
+            with httpx.Client() as client:
+                response = client.post(
+                    "https://api.paystack.co/transaction/initialize",
+                    json=paystack_data,
+                    headers=headers,
+                    timeout=30.0
+                )
+        except AttributeError as e:
+            logger.error(f"❌ Configuration error: {e}")
+            raise HTTPException(status_code=500, detail=f"Configuration error: Paystack secret key missing. {e}")
+        except httpx.RequestError as e:
+            logger.error(f"❌ HTTP request error to Paystack: {e}")
+            raise HTTPException(status_code=502, detail=f"Paystack API request failed: {e}")
+        except Exception as e:
+            logger.error(f"❌ Unexpected error during Paystack API call setup: {e}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error during Paystack API call setup: {e}")
+
 
         if response.status_code != 200:
+            logger.error(f"❌ Paystack API returned non-200 status: {response.status_code}, body: {response.text}")
             raise HTTPException(status_code=502, detail=f"Paystack API error: {response.text}")
 
-        paystack_response = response.json()
+        try:
+            paystack_response = response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to decode Paystack response JSON: {e}, raw text: {response.text}")
+            raise HTTPException(status_code=502, detail=f"Paystack API returned invalid JSON: {e}")
+
         if not paystack_response.get("status"):
+            logger.error(f"❌ Paystack initialization failed: {paystack_response}")
             raise HTTPException(status_code=502, detail=f"Paystack initialization failed: {paystack_response}")
 
-        access_code = paystack_response["data"]["access_code"]
+        try:
+            access_code = paystack_response["data"]["access_code"]
+        except KeyError as e:
+            logger.error(f"❌ Missing key in Paystack response: {e}, response: {paystack_response}")
+            raise HTTPException(status_code=502, detail=f"Paystack response missing required data: {e}")
+
 
         # Update payment with Paystack reference
         payment.transaction_id = paystack_response["data"]["reference"]
@@ -118,8 +149,13 @@ def initialize_paystack_payment(
         }
 
     except ValueError as e:
+        logger.error(f"❌ Value error caught: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        # Re-raise specific HTTPExceptions (400, 403, 404, 502)
+        raise
     except Exception as e:
+        logger.error(f"❌ Unhandled error initializing Paystack payment: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error initializing Paystack payment")
 
 @router.post("/create", response_model=PaymentResponse)
@@ -180,7 +216,7 @@ def create_payment(
             raise HTTPException(status_code=400, detail="Use /payments/paystack/initialize for Paystack payments")
         else:
             # Default response for other gateways
-            return {"payment": payment}
+            return payment
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -511,3 +547,74 @@ def verify_paystack_payment(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error verifying Paystack payment: {str(e)}")
+@router.get("/callback")
+def paystack_callback(
+    reference: str = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Paystack callback redirect after payment.
+    Verifies the payment with Paystack and updates status.
+    """
+    try:
+        if not reference:
+            raise HTTPException(status_code=400, detail="Reference parameter required")
+
+        # Find payment by reference
+        payment = PaymentService.get_payment_by_id(db, reference)
+        if not payment or payment.gateway != PaymentGateway.PAYSTACK:
+            raise HTTPException(status_code=404, detail="Payment not found or not a Paystack payment")
+
+        # Call Paystack verify API
+        paystack_secret_key = settings.PAYSTACK_SECRET_KEY
+        headers = {
+            "Authorization": f"Bearer {paystack_secret_key}",
+            "Content-Type": "application/json"
+        }
+
+        with httpx.Client() as client:
+            response = client.get(
+                f"https://api.paystack.co/transaction/verify/{reference}",
+                headers=headers,
+                timeout=30.0
+            )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Paystack API error: {response.text}")
+
+        paystack_response = response.json()
+        if not paystack_response.get("status"):
+            raise HTTPException(status_code=502, detail=f"Paystack verification failed: {paystack_response}")
+
+        data = paystack_response.get("data", {})
+        status = data.get("status")
+        amount = data.get("amount")  # in kobo
+
+        if status == "success":
+            # Verify amount
+            expected_amount_kobo = int(payment.amount * 100)
+            if amount == expected_amount_kobo:
+                # Update payment status
+                PaymentService.update_payment_status(
+                    db,
+                    payment.id,
+                    PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=reference)
+                )
+                return {"status": "success", "message": "Payment verified and completed"}
+            else:
+                return {"status": "amount_mismatch", "expected": expected_amount_kobo, "received": amount}
+        else:
+            # Update to failed if not already completed
+            if payment.status != PaymentStatus.COMPLETED:
+                PaymentService.update_payment_status(
+                    db,
+                    payment.id,
+                    PaymentUpdate(status=PaymentStatus.FAILED, transaction_id=reference)
+                )
+            return {"status": "failed"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing Paystack callback: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing callback: {str(e)}")

@@ -79,51 +79,52 @@ class PaymentService:
                 logger.error(f"❌ User not found for payment: {payment_data.user_id}")
                 raise ValueError("User not found for payment")
 
-            # Prepare PayFast payment data
-            payfast_environment = settings.PAYFAST_ENVIRONMENT
-            if payfast_environment == "production":
-                base_url = settings.PAYFAST_PRODUCTION_URL
-            else:
-                base_url = settings.PAYFAST_SANDBOX_URL
+            if payment.gateway == PaymentGateway.PAYFAST:
+                # Prepare PayFast payment data
+                payfast_environment = settings.PAYFAST_ENVIRONMENT
+                if payfast_environment == "production":
+                    base_url = settings.PAYFAST_PRODUCTION_URL
+                else:
+                    base_url = settings.PAYFAST_SANDBOX_URL
 
-            merchant_id = settings.PAYFAST_MERCHANT_ID
-            merchant_key = settings.PAYFAST_MERCHANT_KEY
-            passphrase = getattr(settings, "PAYFAST_PASSPHRASE", "")
+                merchant_id = settings.PAYFAST_MERCHANT_ID
+                merchant_key = settings.PAYFAST_MERCHANT_KEY
+                passphrase = getattr(settings, "PAYFAST_PASSPHRASE", "")
 
-            # Build payment data dictionary
-            payfast_data = {
-                "merchant_id": merchant_id,
-                "merchant_key": merchant_key,
-                "return_url": settings.PAYFAST_RETURN_URL,
-                "cancel_url": settings.PAYFAST_CANCEL_URL,
-                "name_first": user.first_name,
-                "name_last": user.last_name,
-                "email_address": user.email,
-                "m_payment_id": str(payment.id),
-                "amount": f"{payment.amount:.2f}",
-                "item_name": "Order Payment",
-                "item_description": f"Payment for order {payment.order_id}",
-            }
+                # Build payment data dictionary
+                payfast_data = {
+                    "merchant_id": merchant_id,
+                    "merchant_key": merchant_key,
+                    "return_url": settings.PAYFAST_RETURN_URL,
+                    "cancel_url": settings.PAYFAST_CANCEL_URL,
+                    "name_first": user.first_name,
+                    "name_last": user.last_name,
+                    "email_address": user.email,
+                    "m_payment_id": str(payment.id),
+                    "amount": f"{payment.amount:.2f}",
+                    "item_name": "Order Payment",
+                    "item_description": f"Payment for order {payment.order_id}",
+                }
 
-            # Generate signature
-            def generate_signature(data, passphrase=""):
-                query_string = ""
-                for key in sorted(data.keys()):
-                    value = data[key]
-                    if value is not None and value != "": # Ensure None values are not included
-                        query_string += f"{key}={requests.utils.quote(str(value).strip())}&"
-                query_string = query_string[:-1]
-                if passphrase:
-                    query_string += f"&passphrase={requests.utils.quote(passphrase.strip())}"
-                return hashlib.md5(query_string.encode("utf-8")).hexdigest()
+                # Generate signature
+                def generate_signature(data, passphrase=""):
+                    query_string = ""
+                    for key in sorted(data.keys()):
+                        value = data[key]
+                        if value is not None and value != "": # Ensure None values are not included
+                            query_string += f"{key}={requests.utils.quote(str(value).strip())}&"
+                    query_string = query_string[:-1]
+                    if passphrase:
+                        query_string += f"&passphrase={requests.utils.quote(passphrase.strip())}"
+                    return hashlib.md5(query_string.encode("utf-8")).hexdigest()
 
-            signature = generate_signature(payfast_data, passphrase)
-            payfast_data["signature"] = signature
+                signature = generate_signature(payfast_data, passphrase)
+                payfast_data["signature"] = signature
 
-            # For now, mark payment as PENDING and store transaction details
-            payment.status = PaymentStatus.PENDING
-            payment.transaction_id = None # This will be updated by PayFast callback
-            payment.transaction_details = json.dumps(payfast_data)
+                # For PayFast, mark payment as PENDING and store transaction details
+                payment.status = PaymentStatus.PENDING
+                payment.transaction_id = None # This will be updated by PayFast callback
+                payment.transaction_details = json.dumps(payfast_data)
 
             db.commit()
             db.refresh(payment)

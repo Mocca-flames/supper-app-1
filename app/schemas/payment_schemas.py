@@ -11,7 +11,7 @@ class PaymentCreate(BaseModel):
     amount: Decimal
     currency: str = "ZAR"
     payment_method: PaymentMethod
-    gateway: PaymentGateway = PaymentGateway.PAYFAST
+    gateway: Optional[PaymentGateway] = None
     transaction_id: Optional[str] = None
     transaction_details: Optional[dict] = None
 
@@ -23,7 +23,7 @@ class PaymentResponse(BaseModel):
     amount: Decimal
     currency: str
     payment_method: PaymentMethod
-    gateway: PaymentGateway
+    gateway: Optional[PaymentGateway]
     status: PaymentStatus
     transaction_id: Optional[str] = None
     created_at: datetime

@@ -196,6 +196,23 @@ class OrderService:
             except Exception as e:
                 logger.warning(f"⚠️ Redis cache update failed: {str(e)}")
 
+            # Send push notification to client
+            try:
+                client_user = db.query(User).filter(User.id == order.client_id).first()
+                if client_user and client_user.fcm_token:
+                    from app.utils.fcm_client import send_push_notification
+                    send_push_notification(
+                        device_token=client_user.fcm_token,
+                        title="Order Accepted!",
+                        body=f"Your driver has accepted order #{order.id}. They are on their way.",
+                        data={"order_id": str(order.id), "type": "ORDER_ACCEPTED"}
+                    )
+                    logger.info(f"📱 Push notification sent to client {order.client_id}")
+                else:
+                    logger.warning(f"⚠️ No FCM token found for client {order.client_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to send push notification: {str(e)}")
+
             logger.info("🎉 ===== ORDER ACCEPTANCE COMPLETED =====")
             return order
             
@@ -479,9 +496,17 @@ class OrderService:
                 logger.error(f"❌ Order not found or access denied: {order_id}")
                 raise ValueError("Order not found or access denied.")
             
+            # Kilo Code Debug: Log current status and driver ID to diagnose inconsistency
+            logger.debug(f"🧪 Order {order_id} retrieved. Status: {order.status.value}, Driver ID: {order.driver_id}")
+
+            # Kilo Code Debug: Expire the object to ensure we get the latest state from DB
+            # This addresses the potential stale session issue.
+            db.expire(order)
+            
+            # Accessing attributes now forces a refresh from the database
             if not order.driver_id:
-                logger.warning("⏳ No driver assigned to order yet")
-                return None 
+                logger.warning(f"⏳ No driver assigned to order yet. Status is {order.status.value}")
+                return None
                 
             logger.info(f"🔍 Fetching location for driver: {order.driver_id}")
             location_data = RedisService.get_driver_location(order.driver_id)
@@ -553,13 +578,25 @@ class OrderService:
                 deletion_summary["success"] = True
                 return deletion_summary
             
-            # Delete orders. ON DELETE CASCADE will handle associated payments and refunds.
+            # --- Explicitly delete related records to satisfy foreign key constraints ---
+            
+            # 1. Get IDs of orders to be deleted
+            order_ids_to_delete = db.query(Order.id).filter(Order.client_id == client_id).subquery()
+
+            # 2. Delete Refunds associated with these orders
+            refunds_deleted = db.query(Refund).filter(Refund.order_id.in_(order_ids_to_delete)).delete(synchronize_session=False)
+            deletion_summary["refunds_deleted"] = refunds_deleted
+            logger.info(f"🗑️ Deleted {refunds_deleted} refunds for client {client_id}'s orders.")
+
+            # 3. Delete Payments associated with these orders
+            payments_deleted = db.query(Payment).filter(Payment.order_id.in_(order_ids_to_delete)).delete(synchronize_session=False)
+            deletion_summary["payments_deleted"] = payments_deleted
+            logger.info(f"🗑️ Deleted {payments_deleted} payments for client {client_id}'s orders.")
+
+            # 4. Delete Orders
             deleted_count = db.query(Order).filter(Order.client_id == client_id).delete(synchronize_session=False)
             deletion_summary["orders_deleted"] = deleted_count
-            # Assuming cascade deletes, payments and refunds will be deleted implicitly
-            deletion_summary["payments_deleted"] = deleted_count
-            deletion_summary["refunds_deleted"] = deleted_count
-            logger.info(f"🗑️ Deleted {deleted_count} orders (and cascaded payments/refunds) for client {client_id}")
+            logger.info(f"🗑️ Deleted {deleted_count} orders for client {client_id}")
             
             # Commit the transaction
             logger.info("💾 Committing deletions to database...")

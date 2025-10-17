@@ -6,7 +6,7 @@ from ..services.order_service import OrderService
 from ..services.user_service import UserService # Added UserService
 from ..services.pricing_service import PricingService # Added PricingService
 from ..schemas.order_schemas import OrderCreate, OrderResponse, OrderUpdate, OrderEstimateRequest, CostEstimationResponse
-from ..schemas.user_schemas import DriverLocationResponse, ClientProfileUpdate, ClientResponse # Added ClientProfileUpdate, ClientResponse
+from ..schemas.user_schemas import DriverLocationResponse, ClientProfileUpdate, ClientResponse, FCMTokenUpdate # Added ClientProfileUpdate, ClientResponse, FCMTokenUpdate
 from ..auth.middleware import get_current_user, get_current_client # get_current_client might be used by other routes
 from ..utils.redis_client import RedisService # Added RedisService
 from ..models.order_models import Order
@@ -140,3 +140,18 @@ def update_client_profile_route(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error during client profile update: {e}")
+
+@router.post("/update-fcm-token")
+def update_fcm_token(
+    fcm_token_data: FCMTokenUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update the FCM token for push notifications."""
+    try:
+        UserService.update_fcm_token(db, current_user.id, fcm_token_data)
+        return {"message": "FCM token updated successfully"}
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error during FCM token update: {e}")

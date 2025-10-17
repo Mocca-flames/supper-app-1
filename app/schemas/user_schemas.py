@@ -77,5 +77,8 @@ class DriverLocationResponse(BaseModel):
     longitude: float
     # timestamp: Optional[datetime] = None # Optional: if you decide to store and return it from Redis
 
+class FCMTokenUpdate(BaseModel):
+    fcmToken: Optional[str] = None
+
 # Forward references for UserResponse
 UserResponse.model_rebuild()

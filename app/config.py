@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     PAYFAST_PRODUCTION_URL: str = "https://www.payfast.co.za"
 
     # Paystack Payment Gateway Configuration
-    PAYSTACK_SECRET_KEY: str = "sk_test_your_paystack_secret_key"
-    PAYSTACK_PUBLIC_KEY: str = "pk_test_your_paystack_public_key"
+    PAYSTACK_SECRET_KEY: str = "sk_test_566a7b362057bc2ca80df97ec482290d60180ea4"
+    PAYSTACK_PUBLIC_KEY: str = "pk_test_eb846621ad62bc7df0027794c88969c04f075b06"
     PAYSTACK_ENVIRONMENT: str = "sandbox"  # or "production"
 
 

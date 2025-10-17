@@ -7,12 +7,13 @@ from ..database import Base
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(String, primary_key=True)  # Firebase UID
     email = Column(String, unique=True, nullable=True)
     full_name = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     role = Column(String, nullable=True)  # Added role attribute (e.g., "client", "driver")
+    fcm_token = Column(String, nullable=True)  # FCM token for push notifications
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

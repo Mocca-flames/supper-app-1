@@ -22,3 +22,11 @@ class RedisService:
     @staticmethod
     def get_order_status(order_id: str):
         return redis_client.get(f"order_status:{order_id}")
+
+    @staticmethod
+    def set_value(key: str, value: str, expire_seconds: int = None):
+        redis_client.set(key, value, ex=expire_seconds)
+
+    @staticmethod
+    def get_value(key: str):
+        return redis_client.get(key)
