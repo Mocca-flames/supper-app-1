@@ -87,6 +87,7 @@ def initialize_paystack_payment(
             "amount": amount_kobo,
             "currency": payment.currency,
             "reference": payment.id,  # Use payment ID as reference
+            "callback_url": getattr(settings, "PAYSTACK_CALLBACK_URL", " http://56.228.32.209:8000/api/payments/callback")
         }
 
         # Call Paystack API
