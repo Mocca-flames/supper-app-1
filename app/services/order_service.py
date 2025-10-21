@@ -87,7 +87,9 @@ class OrderService:
                 patient_details=order_data.patient_details,
                 medical_items=order_data.medical_items,
                 distance_km=distance_km_decimal,
-                price=order_price
+                price=order_price,
+                total_paid=Decimal("0.00"),  # Explicitly initialize payment tracking fields
+                total_refunded=Decimal("0.00")
             )
             
             logger.info("💾 Saving order to database...")

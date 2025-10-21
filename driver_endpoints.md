@@ -111,7 +111,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
     "price": null,
     "distance_km": null,
     "special_instructions": "Handle with care",
-    "created_at": "2025-08-16T10:00:00.000Z"
+    "created_at": "2025-08-16T10:00:00.000Z",
+    "payment_status": "pending",
+    "total_paid": 0.00,
+    "total_refunded": 0.00
   },
   {
     "id": "b2c3d4e5-f6a7-8901-2345-67890abcdef0",
@@ -128,7 +131,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
     "price": null,
     "distance_km": null,
     "special_instructions": null,
-    "created_at": "2025-08-16T10:15:00.000Z"
+    "created_at": "2025-08-16T10:15:00.000Z",
+    "payment_status": "pending",
+    "total_paid": 0.00,
+    "total_refunded": 0.00
   }
 ]
 ```
@@ -167,7 +173,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
   "price": 15.50,
   "distance_km": 5.2,
   "special_instructions": "Handle with care",
-  "created_at": "2025-08-16T10:00:00.000Z"
+  "created_at": "2025-08-16T10:00:00.000Z",
+  "payment_status": "pending",
+  "total_paid": 0.00,
+  "total_refunded": 0.00
 }
 ```
 
@@ -194,7 +203,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
     "price": 15.50,
     "distance_km": 5.2,
     "special_instructions": "Handle with care",
-    "created_at": "2025-08-16T10:00:00.000Z"
+    "created_at": "2025-08-16T10:00:00.000Z",
+    "payment_status": "pending",
+    "total_paid": 0.00,
+    "total_refunded": 0.00
   },
   {
     "id": "c3d4e5f6-a7b8-9012-3456-7890abcdef12",
@@ -211,7 +223,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
     "price": 20.00,
     "distance_km": 8.1,
     "special_instructions": null,
-    "created_at": "2025-08-16T11:30:00.000Z"
+    "created_at": "2025-08-16T11:30:00.000Z",
+    "payment_status": "pending",
+    "total_paid": 0.00,
+    "total_refunded": 0.00
   }
 ]
 ```
@@ -248,7 +263,10 @@ This guide provides comprehensive documentation for all endpoints specifically d
   "price": 15.50,
   "distance_km": 5.2,
   "special_instructions": "Handle with care",
-  "created_at": "2025-08-16T10:00:00.000Z"
+  "created_at": "2025-08-16T10:00:00.000Z",
+  "payment_status": "completed",
+  "total_paid": 15.50,
+  "total_refunded": 0.00
 }
 ```
 

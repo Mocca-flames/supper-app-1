@@ -312,3 +312,156 @@ class PaymentService:
         """Get all refunds for an order"""
         logger.info(f"🔍 Getting refunds for order: {order_id}")
         return db.query(Refund).filter(Refund.order_id == order_id).all()
+
+    @staticmethod
+    def verify_paystack_payment_status(db: Session, payment_id: str) -> Dict[str, Any]:
+        """
+        Verify payment status with Paystack API for reconciliation purposes.
+        Returns verification result with status and details.
+        """
+        logger.info(f"🔍 Verifying Paystack payment status: {payment_id}")
+
+        try:
+            payment = PaymentService.get_payment_by_id(db, payment_id)
+            if not payment:
+                logger.error(f"❌ Payment not found: {payment_id}")
+                return {"status": "error", "message": "Payment not found"}
+
+            if payment.gateway != PaymentGateway.PAYSTACK:
+                logger.error(f"❌ Payment is not a Paystack payment: {payment.gateway}")
+                return {"status": "error", "message": "Not a Paystack payment"}
+
+            if not payment.transaction_id:
+                logger.error(f"❌ Payment has no transaction_id: {payment_id}")
+                return {"status": "error", "message": "No transaction ID available"}
+
+            # Call Paystack verify API
+            paystack_secret_key = settings.PAYSTACK_SECRET_KEY
+            headers = {
+                "Authorization": f"Bearer {paystack_secret_key}",
+                "Content-Type": "application/json"
+            }
+
+            with httpx.Client() as client:
+                response = client.get(
+                    f"https://api.paystack.co/transaction/verify/{payment.transaction_id}",
+                    headers=headers,
+                    timeout=30.0
+                )
+
+            if response.status_code != 200:
+                logger.error(f"❌ Paystack API error: {response.status_code}, {response.text}")
+                return {"status": "api_error", "message": f"Paystack API error: {response.status_code}"}
+
+            paystack_response = response.json()
+            if not paystack_response.get("status"):
+                logger.error(f"❌ Paystack verification failed: {paystack_response}")
+                return {"status": "verification_failed", "message": "Paystack verification failed"}
+
+            data = paystack_response.get("data", {})
+            paystack_status = data.get("status")
+            amount_kobo = data.get("amount")
+
+            # Verify amount matches
+            expected_amount_kobo = int(payment.amount * 100)
+            amount_matches = amount_kobo == expected_amount_kobo
+
+            verification_result = {
+                "status": "verified",
+                "paystack_status": paystack_status,
+                "amount_matches": amount_matches,
+                "expected_amount_kobo": expected_amount_kobo,
+                "received_amount_kobo": amount_kobo,
+                "payment_current_status": payment.status.value
+            }
+
+            # Update payment status if needed
+            if paystack_status == "success" and payment.status != PaymentStatus.COMPLETED:
+                if amount_matches:
+                    PaymentService.update_payment_status(
+                        db,
+                        payment.id,
+                        PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=payment.transaction_id)
+                    )
+                    verification_result["action_taken"] = "status_updated_to_completed"
+                    logger.info(f"✅ Payment {payment_id} status updated to COMPLETED during reconciliation")
+                else:
+                    verification_result["action_taken"] = "amount_mismatch_no_update"
+                    logger.warning(f"⚠️ Amount mismatch for payment {payment_id}, status not updated")
+            elif paystack_status == "failed" and payment.status == PaymentStatus.PENDING:
+                PaymentService.update_payment_status(
+                    db,
+                    payment.id,
+                    PaymentUpdate(status=PaymentStatus.FAILED, transaction_id=payment.transaction_id)
+                )
+                verification_result["action_taken"] = "status_updated_to_failed"
+                logger.info(f"✅ Payment {payment_id} status updated to FAILED during reconciliation")
+
+            return verification_result
+
+        except Exception as e:
+            logger.error(f"❌ Error verifying Paystack payment {payment_id}: {str(e)}")
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def reconcile_pending_payments(db: Session, hours_threshold: int = 24) -> Dict[str, Any]:
+        """
+        Reconcile pending Paystack payments that are older than the threshold.
+        This helps detect payments that may have succeeded but webhook was missed.
+        """
+        from datetime import datetime, timedelta
+
+        logger.info(f"🔄 Starting payment reconciliation for payments older than {hours_threshold} hours")
+
+        try:
+            cutoff_time = datetime.utcnow() - timedelta(hours=hours_threshold)
+
+            # Find pending Paystack payments older than threshold
+            pending_payments = db.query(Payment).filter(
+                Payment.gateway == PaymentGateway.PAYSTACK,
+                Payment.status == PaymentStatus.PENDING,
+                Payment.created_at < cutoff_time,
+                Payment.transaction_id.isnot(None)
+            ).all()
+
+            logger.info(f"📋 Found {len(pending_payments)} pending Paystack payments to reconcile")
+
+            reconciliation_results = {
+                "total_checked": len(pending_payments),
+                "status_updated": 0,
+                "amount_mismatches": 0,
+                "api_errors": 0,
+                "no_changes": 0,
+                "details": []
+            }
+
+            for payment in pending_payments:
+                result = PaymentService.verify_paystack_payment_status(db, payment.id)
+
+                if result["status"] == "verified":
+                    if "action_taken" in result and "status_updated" in result["action_taken"]:
+                        reconciliation_results["status_updated"] += 1
+                    elif not result["amount_matches"]:
+                        reconciliation_results["amount_mismatches"] += 1
+                    else:
+                        reconciliation_results["no_changes"] += 1
+                elif result["status"] == "api_error":
+                    reconciliation_results["api_errors"] += 1
+                else:
+                    reconciliation_results["no_changes"] += 1
+
+                reconciliation_results["details"].append({
+                    "payment_id": payment.id,
+                    "transaction_id": payment.transaction_id,
+                    "result": result
+                })
+
+            logger.info(f"✅ Reconciliation completed: {reconciliation_results['status_updated']} updated, "
+                       f"{reconciliation_results['amount_mismatches']} mismatches, "
+                       f"{reconciliation_results['api_errors']} API errors")
+
+            return reconciliation_results
+
+        except Exception as e:
+            logger.error(f"❌ Error during payment reconciliation: {str(e)}")
+            return {"status": "error", "message": str(e)}

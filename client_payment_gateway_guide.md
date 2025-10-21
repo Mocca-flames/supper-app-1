@@ -135,3 +135,75 @@ onPaymentCancelled();
 
 - POST /payments/create currently requires user_id; plan to derive from auth context.
 - GET /payments/query/{pf_payment_id} is implemented for status confirmation.
+
+# Paystack Integration Guide
+
+Paystack uses an initialization/redirection flow, followed by server-to-server webhooks for primary verification. The client only needs to handle the redirection and a final status check.
+
+## Paystack Process Overview
+
+1. Client sends minimal payment data to backend via `/payments/paystack/initialize`.
+2. Backend creates PENDING payment, calls Paystack API, and returns `authorization_url`.
+3. Client redirects user to `authorization_url` to complete payment.
+4. Paystack processes payment.
+5. Paystack sends primary verification via **Webhook** to backend (`/payments/paystack/webhook`).
+6. Paystack redirects user back to the configured `callback_url` (optional, but recommended for user experience).
+7. Client can optionally call `/payments/paystack/verify/{reference}` as a fallback to confirm status.
+
+## Client Steps for Paystack
+
+1. Prepare minimal payment payload (same as PayFast, but ensure `gateway` is implicitly or explicitly set to `paystack` if using a generic endpoint).
+
+2. Initiate Paystack payment:
+
+```javascript
+async function initiatePaystackPayment(payload, token) {
+  // Use the specific Paystack initialization endpoint
+  const response = await fetch('/payments/paystack/initialize', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.authorization_url) {
+    console.error('Paystack initialization failed:', result.detail || result);
+    return;
+  }
+  // Redirect user to Paystack checkout page
+  window.location.href = result.authorization_url;
+}
+```
+
+3. Handle Callback/Verification (Fallback):
+
+After redirection from Paystack, the client application should check the URL for the `reference` (which is the payment ID).
+
+```javascript
+async function verifyPaystackStatus(reference, token) {
+  const res = await fetch(`/payments/paystack/verify/${reference}`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  const data = await res.json();
+  if (data.status === 'verified' && data.payment.status === 'completed') {
+    onPaymentSuccess(data.payment);
+  } else {
+    onPaymentStatus(data.payment.status);
+  }
+}
+
+// Example usage on the callback page:
+const urlParams = new URLSearchParams(window.location.search);
+const reference = urlParams.get('reference');
+if (reference) {
+  verifyPaystackStatus(reference, token);
+}
+```
+
+## Backend API Notes (Paystack)
+
+- POST /payments/paystack/initialize: Creates payment record and gets authorization URL.
+- POST /payments/paystack/webhook: Secure, server-to-server endpoint for primary status updates (includes signature verification).
+- GET /payments/paystack/verify/{reference}: Client-callable endpoint for manual status confirmation.

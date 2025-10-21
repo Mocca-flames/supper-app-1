@@ -38,7 +38,10 @@ class OrderResponse(BaseModel):
     distance_km: Optional[Decimal] = None
     special_instructions: Optional[str] = None
     created_at: datetime
-    
+    payment_status: PaymentStatus
+    total_paid: Optional[Decimal] = None
+    total_refunded: Optional[Decimal] = None
+
     model_config = {"from_attributes": True}
 
 class OrderStatusUpdate(BaseModel):

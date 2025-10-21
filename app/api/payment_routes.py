@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json # Added for json.loads
@@ -8,6 +8,7 @@ import hashlib # Added for MD5 signature generation
 import urllib.parse # Added for URL encoding
 from datetime import datetime # Added for timestamp generation
 import logging # Added for logging
+import hmac # Added for HMAC signature verification
 
 from ..database import get_db
 from ..services.payment_service import PaymentService
@@ -431,8 +432,8 @@ def query_payfast_transaction(
         raise HTTPException(status_code=500, detail=f"Error querying PayFast transaction: {str(e)}")
 
 @router.post("/paystack/webhook")
-def paystack_webhook(
-    request: dict,
+async def paystack_webhook(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -440,41 +441,130 @@ def paystack_webhook(
     Paystack sends this when a transaction is completed.
     """
     try:
-        # Verify webhook signature (recommended for production)
-        # For now, we'll trust the request
+        # Get raw request body for signature verification
+        body = await request.body()
+        body_str = body.decode('utf-8')
 
-        event = request.get("event")
-        data = request.get("data", {})
+        # Verify webhook signature (required for production security)
+        signature_header = request.headers.get('x-paystack-signature')
+        if not signature_header:
+            logger.error("❌ Missing Paystack signature header")
+            raise HTTPException(status_code=400, detail="Missing signature header")
+
+        paystack_secret = settings.PAYSTACK_SECRET_KEY.encode('utf-8')
+        expected_signature = hmac.new(
+            paystack_secret,
+            body,
+            hashlib.sha512
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_signature, signature_header):
+            logger.error("❌ Invalid Paystack webhook signature")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        # Parse the JSON payload
+        try:
+            request_data = json.loads(body_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Invalid JSON in webhook payload: {e}")
+            raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+        event = request_data.get("event")
+        data = request_data.get("data", {})
 
         if event == "charge.success":
             reference = data.get("reference")
             status = data.get("status")
-            amount = data.get("amount")  # in kobo
+            amount_kobo = data.get("amount")  # in kobo
+
+            if not reference:
+                logger.error("❌ Missing reference in charge.success event")
+                raise HTTPException(status_code=400, detail="Missing reference in webhook data")
 
             if status == "success":
                 # Find payment by reference
                 payment = PaymentService.get_payment_by_id(db, reference)
+                if not payment:
+                    logger.error(f"❌ Payment not found: {reference}")
+                    raise HTTPException(status_code=404, detail="Payment not found")
+
+                if payment.gateway != PaymentGateway.PAYSTACK:
+                    logger.error(f"❌ Payment gateway mismatch: expected Paystack, got {payment.gateway}")
+                    raise HTTPException(status_code=400, detail="Invalid payment gateway")
+
+                # Verify amount matches expected payment amount
+                expected_amount_kobo = int(payment.amount * 100)
+                if amount_kobo != expected_amount_kobo:
+                    logger.error(f"❌ Amount mismatch for payment {payment.id}: expected {expected_amount_kobo} kobo, got {amount_kobo} kobo")
+                    raise HTTPException(status_code=400, detail="Payment amount mismatch")
+
+                # Get the associated order to check remaining balance
+                order = db.query(Order).filter(Order.id == payment.order_id).first()
+                if not order:
+                    logger.error(f"❌ Order not found for payment {payment.id}: {payment.order_id}")
+                    raise HTTPException(status_code=404, detail="Associated order not found")
+
+                # Calculate remaining amount to be paid (order price - already paid)
+                remaining_amount = order.price - order.total_paid
+                payment_amount = payment.amount
+
+                if payment_amount > remaining_amount:
+                    logger.error(f"❌ Payment amount exceeds remaining order balance: payment={payment_amount}, remaining={remaining_amount}")
+                    # Mark payment as failed and update order status
+                    PaymentService.update_payment_status(
+                        db,
+                        payment.id,
+                        PaymentUpdate(status=PaymentStatus.FAILED, transaction_id=reference)
+                    )
+                    raise HTTPException(status_code=400, detail="Payment amount exceeds order balance")
+
+                # Check for duplicate payment (if transaction_id is already set)
+                if payment.transaction_id and payment.transaction_id != reference:
+                    logger.warning(f"⚠️ Potential duplicate payment detected for reference {reference}")
+                    # Allow the webhook to proceed but log the issue
+
+                # Update payment status to completed
+                try:
+                    PaymentService.update_payment_status(
+                        db,
+                        payment.id,
+                        PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=reference)
+                    )
+                    logger.info(f"✅ Payment {payment.id} marked as completed via webhook")
+                    return {"status": "success"}
+                except Exception as update_error:
+                    logger.error(f"❌ Failed to update payment status: {str(update_error)}")
+                    raise HTTPException(status_code=500, detail="Failed to update payment status")
+
+            else:
+                logger.warning(f"⚠️ Received charge.success event with non-success status: {status}")
+
+        elif event == "charge.failed":
+            reference = data.get("reference")
+            if reference:
+                payment = PaymentService.get_payment_by_id(db, reference)
                 if payment and payment.gateway == PaymentGateway.PAYSTACK:
-                    # Verify amount matches
-                    expected_amount_kobo = int(payment.amount * 100)
-                    if amount == expected_amount_kobo:
-                        # Update payment status
+                    try:
                         PaymentService.update_payment_status(
                             db,
                             payment.id,
-                            PaymentUpdate(status=PaymentStatus.COMPLETED, transaction_id=reference)
+                            PaymentUpdate(status=PaymentStatus.FAILED, transaction_id=reference)
                         )
-                        return {"status": "success"}
-                    else:
-                        logger.error(f"Amount mismatch for payment {payment.id}: expected {expected_amount_kobo}, got {amount}")
-                else:
-                    logger.error(f"Payment not found or not Paystack: {reference}")
+                        logger.info(f"✅ Payment {payment.id} marked as failed via webhook")
+                    except Exception as update_error:
+                        logger.error(f"❌ Failed to update failed payment status: {str(update_error)}")
+
+        else:
+            logger.info(f"ℹ️ Ignoring unhandled webhook event: {event}")
 
         return {"status": "ignored"}
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        logger.error(f"Error processing Paystack webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error processing webhook")
+        logger.error(f"❌ Unexpected error processing Paystack webhook: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error processing webhook")
 
 @router.get("/paystack/verify/{reference}")
 def verify_paystack_payment(
