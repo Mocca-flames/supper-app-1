@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func

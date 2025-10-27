@@ -39,6 +39,24 @@ class DriverService:
         return order
 
     @staticmethod
+    def cancel_order(db: Session, driver_id: str, order_id: str):
+        """Cancel an order assigned to the driver"""
+        order = db.query(Order).filter(Order.id == order_id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order.driver_id != driver_id:
+            raise HTTPException(status_code=403, detail="Order not assigned to this driver")
+
+        if order.status != 'accepted':
+            raise HTTPException(status_code=400, detail="Order cannot be cancelled in its current state")
+
+        order.status = 'cancelled'
+        db.commit()
+        db.refresh(order)
+        return order
+
+    @staticmethod
     def update_location(driver_id: str, location_data: DriverLocationUpdate):
         """Update driver location"""
         RedisService.set_driver_location(

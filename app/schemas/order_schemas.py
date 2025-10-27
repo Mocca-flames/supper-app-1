@@ -22,6 +22,21 @@ class OrderCreate(BaseModel):
 class AdminOrderCreate(OrderCreate):
     client_id: str
 
+class InHouseOrderCreate(BaseModel):
+    order_type: OrderType
+    pickup_address: str
+    pickup_latitude: str
+    pickup_longitude: str
+    dropoff_address: str
+    dropoff_latitude: str
+    dropoff_longitude: str
+    distance_km: str
+    total_paid: Decimal
+    payment_status: PaymentStatus
+    special_instructions: Optional[str] = None
+    patient_details: Optional[str] = None
+    medical_items: Optional[str] = None
+
 class OrderResponse(BaseModel):
     id: str
     client_id: str

@@ -6,7 +6,7 @@ from ..database import get_db
 from ..services.user_service import UserService
 from ..services.order_service import OrderService
 from ..schemas.user_schemas import DriverResponse, UserResponse
-from ..schemas.order_schemas import AdminOrderCreate, OrderResponse
+from ..schemas.order_schemas import AdminOrderCreate, OrderResponse, InHouseOrderCreate
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -50,6 +50,21 @@ def admin_create_order(
     """Admin creates an order for a specific client"""
     try:
         order = OrderService.create_order(db, order_data=order_data)
+        return order
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+@router.post("/orders/in-house", response_model=OrderResponse)
+def admin_create_in_house_order(
+    order_data: InHouseOrderCreate,
+    db: Session = Depends(get_db),
+    admin_verified = Depends(verify_admin_key)
+):
+    """Admin creates an in-house order without requiring a specific client (uses placeholder client ID)"""
+    try:
+        order = OrderService.create_in_house_order(db, order_data)
         return order
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

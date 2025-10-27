@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from app.models.user_models import Driver
 from ..models.order_models import Order, OrderStatus
-from ..schemas.order_schemas import OrderCreate, OrderAccept, TrackingSessionResponse
+from ..schemas.order_schemas import OrderCreate, OrderAccept, TrackingSessionResponse, InHouseOrderCreate
 from ..schemas.user_schemas import DriverLocationResponse
 from ..utils.redis_client import RedisService
 from ..services.payment_service import PaymentService
@@ -115,7 +115,7 @@ class OrderService:
             
             logger.info("🎉 ===== ORDER CREATION COMPLETED =====")
             return order
-            
+
         except IntegrityError as e:
             logger.error(f"❌ Database integrity error during order creation: {str(e)}")
             db.rollback()
@@ -128,6 +128,64 @@ class OrderService:
             logger.error(f"❌ Unexpected error during order creation: {str(e)}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Unexpected error during order creation: {str(e)}") from e
+
+    @staticmethod
+    def create_in_house_order(db: Session, order_data: InHouseOrderCreate) -> Order:
+        """Create an in-house order using a placeholder client ID and pre-set payment details."""
+        logger.info("🏢 ===== IN-HOUSE ORDER CREATION =====")
+        logger.info(f"📋 Order details - Type: {order_data.order_type}")
+        logger.info(f"📍 Pickup: {order_data.pickup_address} ({order_data.pickup_latitude}, {order_data.pickup_longitude})")
+        logger.info(f"🎯 Dropoff: {order_data.dropoff_address} ({order_data.dropoff_latitude}, {order_data.dropoff_longitude})")
+        logger.info(f"💰 Total paid: R{order_data.total_paid}, Status: {order_data.payment_status.value}")
+
+        # Placeholder client ID for in-house orders
+        IN_HOUSE_CLIENT_ID = "IN_HOUSE_CLIENT_ID"
+
+        try:
+            # Convert InHouseOrderCreate to OrderCreate structure
+            order_create_data = OrderCreate(
+                order_type=order_data.order_type,
+                pickup_address=order_data.pickup_address,
+                pickup_latitude=order_data.pickup_latitude,
+                pickup_longitude=order_data.pickup_longitude,
+                dropoff_address=order_data.dropoff_address,
+                dropoff_latitude=order_data.dropoff_latitude,
+                dropoff_longitude=order_data.dropoff_longitude,
+                client_id=IN_HOUSE_CLIENT_ID,  # Inject placeholder client ID
+                distance_km=order_data.distance_km,
+                special_instructions=order_data.special_instructions,
+                patient_details=order_data.patient_details,
+                medical_items=order_data.medical_items
+            )
+
+            # Create the order using the existing create_order method
+            order = OrderService.create_order(db, order_create_data)
+
+            # Update payment fields for in-house orders
+            order.payment_status = order_data.payment_status
+            order.total_paid = order_data.total_paid
+
+            logger.info("💾 Updating payment details for in-house order...")
+            db.commit()
+            db.refresh(order)
+
+            logger.info(f"✅ In-house order created successfully - Order ID: {order.id}")
+            logger.info(f"💰 Payment status: {order.payment_status.value}, Total paid: R{order.total_paid}")
+            logger.info("🏢 ===== IN-HOUSE ORDER CREATION COMPLETED =====")
+            return order
+
+        except IntegrityError as e:
+            logger.error(f"❌ Database integrity error during in-house order creation: {str(e)}")
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"In-house order creation failed due to data integrity issue: {str(e)}") from e
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Database error during in-house order creation: {str(e)}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Database error during in-house order creation: {str(e)}") from e
+        except Exception as e:
+            logger.error(f"❌ Unexpected error during in-house order creation: {str(e)}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Unexpected error during in-house order creation: {str(e)}") from e
     
     @staticmethod
     def get_pending_orders(db: Session) -> List[Order]:
@@ -497,12 +555,8 @@ class OrderService:
             if not order:
                 logger.error(f"❌ Order not found or access denied: {order_id}")
                 raise ValueError("Order not found or access denied.")
-            
-            # Kilo Code Debug: Log current status and driver ID to diagnose inconsistency
-            logger.debug(f"🧪 Order {order_id} retrieved. Status: {order.status.value}, Driver ID: {order.driver_id}")
 
-            # Kilo Code Debug: Expire the object to ensure we get the latest state from DB
-            # This addresses the potential stale session issue.
+            logger.debug(f"🧪 Order {order_id} retrieved. Status: {order.status.value}, Driver ID: {order.driver_id}")
             db.expire(order)
             
             # Accessing attributes now forces a refresh from the database

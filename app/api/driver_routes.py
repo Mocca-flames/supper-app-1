@@ -71,6 +71,19 @@ def update_order_status(
     
     return order
 
+@router.post("/orders/{order_id}/cancel", response_model=OrderResponse)
+def cancel_order(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancel an order assigned to the current driver"""
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="User is not a driver")
+
+    order = DriverService.cancel_order(db, current_user.id, order_id)
+    return order
+
 @router.post("/location")
 def update_location(
     location_data: DriverLocationUpdate,
