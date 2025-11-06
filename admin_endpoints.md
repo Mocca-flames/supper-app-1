@@ -559,6 +559,50 @@ This guide documents the Admin API endpoints. All admin endpoints require an `ad
     "updated_at": "2025-08-11T08:45:49.071Z"
   }
 ]
+### 2.20 Create In-House Order
+
+- **Endpoint:** `POST /admin/orders/in-house`
+- **Method:** `POST`
+- **Query Parameters:**
+  - `admin_key` (string, required) — Authentication key
+- **Request Body:**
+```json
+{
+  "order_type": "ride",
+  "pickup_address": "string",
+  "pickup_latitude": "string",
+  "pickup_longitude": "string",
+  "dropoff_address": "string",
+  "dropoff_latitude": "string",
+  "dropoff_longitude": "string",
+  "distance_km": "string",
+  "total_paid": "decimal",
+  "payment_status": "string",
+  "special_instructions": "string"
+}
+```
+- **Response (201 Created):**
+```json
+{
+  "id": "string",
+  "client_id": "string",
+  "driver_id": "string",
+  "order_type": "ride",
+  "status": "pending",
+  "pickup_address": "string",
+  "pickup_latitude": "string",
+  "pickup_longitude": "string",
+  "dropoff_address": "string",
+  "dropoff_latitude": "string",
+  "dropoff_longitude": "string",
+  "price": "string",
+  "distance_km": "string",
+  "special_instructions": "string",
+  "patient_details": "string",
+  "medical_items": "string",
+  "created_at": "2025-08-11T08:48:03.183Z"
+}
+```
 ```
 ---
 
@@ -666,6 +710,23 @@ curl -X PATCH "/admin/orders/order_123/status?new_status=completed&admin_key=Mau
 
 ### Search Orders
 ```bash
+### Create In-House Order
+```bash
+curl -X POST "/admin/orders/in-house?admin_key=Maurice@12!" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_type": "parcel_delivery",
+    "pickup_address": "Warehouse A",
+    "pickup_latitude": "-26.2041",
+    "pickup_longitude": "28.0473",
+    "dropoff_address": "Customer B",
+    "dropoff_latitude": "-26.1952",
+    "dropoff_longitude": "28.0341",
+    "distance_km": "12.5",
+    "total_paid": 125.00,
+    "payment_status": "completed"
+  }'
+```
 curl -X GET "/admin/orders/search?client_email=client@example.com&status=completed&admin_key=Maurice@12!"
 ```
 

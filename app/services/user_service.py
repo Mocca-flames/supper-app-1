@@ -277,18 +277,14 @@ class UserService:
     @staticmethod
     def get_all_drivers_status(db: Session, include_inactive: bool = True) -> List[Dict[str, Any]]:
         """Get status overview of all drivers for admin dashboard"""
-        logger.info(f"🚗 ===== FETCHING ALL DRIVERS STATUS =====")
-        logger.info(f"📋 Include inactive: {include_inactive}")
-
         try:
             query = db.query(Driver)
-            
+
             if not include_inactive:
                 query = query.filter(Driver.is_available == True)
-                logger.debug("🔍 Filtering for active drivers only")
 
             drivers = query.all()
-            
+
             drivers_status = []
             for driver in drivers:
                 driver_info = {
@@ -303,11 +299,6 @@ class UserService:
                     # "created_at": driver.created_at.isoformat() if hasattr(driver, 'created_at') else None
                 }
                 drivers_status.append(driver_info)
-
-            logger.info(f"✅ Retrieved {len(drivers_status)} drivers")
-            active_count = sum(1 for d in drivers_status if d["is_available"])
-            inactive_count = len(drivers_status) - active_count
-            logger.info(f"📊 Active: {active_count}, Inactive: {inactive_count}")
 
             return drivers_status
 

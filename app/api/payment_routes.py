@@ -12,11 +12,12 @@ import hmac # Added for HMAC signature verification
 
 from ..database import get_db
 from ..services.payment_service import PaymentService
-from ..schemas.payment_schemas import PaymentCreate, PaymentResponse, PaymentUpdate, RefundCreate, RefundResponse
+from ..schemas.payment_schemas import PaymentCreate, PaymentResponse, PaymentUpdate, RefundCreate, RefundResponse, DriverPayoutCreate, DriverPayoutResponse, DriverPayoutUpdate
 from ..auth.middleware import get_current_user
 from ..schemas.user_schemas import UserResponse
-from ..models.payment_models import PaymentStatus, PaymentType, PaymentGateway
+from ..models.payment_models import Payment, PaymentStatus, PaymentType, PaymentGateway
 from ..models.order_models import Order
+from ..services.payment_service import PaymentService
 from ..config import settings # Added for settings
 
 # Configure logger
@@ -708,3 +709,164 @@ def paystack_callback(
     except Exception as e:
         logger.error(f"Error processing Paystack callback: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing callback: {str(e)}")
+
+# Client Payment Routes
+@router.post("/", response_model=PaymentResponse)
+def record_client_payment(
+    payment_data: PaymentCreate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Record a new client payment (triggered post-transaction).
+    Internal/System access.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to record payments")
+
+    try:
+        # Validate client exists
+        from ..models.user_models import User
+        client = db.query(User).filter(User.id == payment_data.client_id).first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+
+        # Validate request exists
+        request = db.query(Order).filter(Order.id == payment_data.request_id).first()
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        # Create payment record
+        payment = Payment(
+            client_id=payment_data.client_id,
+            request_id=payment_data.request_id,
+            amount=payment_data.amount,
+            payment_method=payment_data.payment_method,
+            status=PaymentStatus.COMPLETED,  # Assuming successful payment recording
+            transaction_id=payment_data.transaction_id,
+            payment_date=datetime.utcnow()
+        )
+
+        db.add(payment)
+        db.commit()
+        db.refresh(payment)
+
+        # Update request status if fully paid
+        # This logic would need to be implemented based on business rules
+
+        return payment
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error recording payment")
+
+@router.get("/{payment_id}", response_model=PaymentResponse)
+def get_payment_details(
+    payment_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Retrieve details of a specific payment.
+    Admin/Client (Self) access.
+    """
+    try:
+        payment = PaymentService.get_payment_by_id(db, payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        # Check authorization - admin or payment client
+        if payment.client_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Not authorized to view this payment")
+
+        return payment
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error retrieving payment")
+
+@router.get("/client/{client_id}", response_model=List[PaymentResponse])
+def get_client_payment_history(
+    client_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Retrieve all payment history for a client.
+    Admin/Client (Self) access.
+    """
+    if client_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to view client payments")
+
+    try:
+        payments = db.query(Payment).filter(Payment.client_id == client_id).order_by(Payment.created_at.desc()).all()
+        return payments
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error retrieving payment history")
+
+# Driver Payout Routes
+@router.post("/payouts/request", response_model=DriverPayoutResponse)
+def request_driver_payout(
+    payout_data: DriverPayoutCreate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Driver submits a payment request for accumulated earnings.
+    Driver access.
+    """
+    if current_user.id != payout_data.driver_id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to request payout for this driver")
+
+    try:
+        payout = PaymentService.create_driver_payout_request(db, current_user.id, payout_data)
+        return payout
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error requesting payout")
+
+@router.get("/payouts/driver/{driver_id}", response_model=List[DriverPayoutResponse])
+def get_driver_payout_history(
+    driver_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Retrieve payout history for a specific driver.
+    Admin/Driver (Self) access.
+    """
+    if driver_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to view driver payouts")
+
+    try:
+        payouts = PaymentService.get_driver_payout_history(db, driver_id)
+        return payouts
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error retrieving payout history")
+
+@router.put("/payouts/{payout_id}/status", response_model=DriverPayoutResponse)
+def update_payout_status(
+    payout_id: str,
+    update_data: DriverPayoutUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Update the status of a payout request (Approval/Disbursement).
+    Admin/Finance access.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to update payout status")
+
+    try:
+        updated_payout = PaymentService.update_driver_payout_status(db, payout_id, update_data)
+        return updated_payout
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error updating payout status")

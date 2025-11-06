@@ -30,3 +30,14 @@ class RedisService:
     @staticmethod
     def get_value(key: str):
         return redis_client.get(key)
+
+    @staticmethod
+    def set_driver_last_seen(driver_id: str):
+        """Set driver's last seen timestamp when they update location"""
+        import time
+        redis_client.set(f"driver_last_seen:{driver_id}", str(int(time.time())))
+
+    @staticmethod
+    def get_driver_last_seen(driver_id: str):
+        """Get driver's last seen timestamp"""
+        return redis_client.get(f"driver_last_seen:{driver_id}")

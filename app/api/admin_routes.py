@@ -5,8 +5,14 @@ from decimal import Decimal
 from ..database import get_db
 from ..services.user_service import UserService
 from ..services.order_service import OrderService
+from ..services.payment_service import PaymentService
+from ..services.websocket_service import WebSocketService
 from ..schemas.user_schemas import DriverResponse, UserResponse
 from ..schemas.order_schemas import AdminOrderCreate, OrderResponse, InHouseOrderCreate
+from ..schemas.payment_schemas import RevenueReport, ProfitReport, HistoryReport
+from ..models.order_models import Order
+from ..models.payment_models import Payment, DriverPayout, PaymentStatus, PayoutStatus, PayoutStatus
+from ..models.user_models import User
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -238,11 +244,103 @@ def get_admin_stats_summary(
     db: Session = Depends(get_db),
     admin_verified = Depends(verify_admin_key)
 ):
-    """Get basic admin statistics."""
+    """Get comprehensive admin statistics including revenue and financial data."""
     try:
-        # You'll need to add this method to OrderService
-        stats = OrderService.get_admin_stats(db, days)
-        return stats
+        from datetime import datetime, timedelta
+        from sqlalchemy import func
+
+        # Calculate date range
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        # Basic order statistics
+        total_orders = db.query(func.count(Order.id)).filter(
+            Order.created_at >= start_date,
+            Order.created_at <= end_date
+        ).scalar() or 0
+
+        # Use OrderStatus enum value instead of string to match database enum values
+        from ..models.order_models import OrderStatus
+        completed_orders = db.query(func.count(Order.id)).filter(
+            Order.status == OrderStatus.COMPLETED,
+            Order.created_at >= start_date,
+            Order.created_at <= end_date
+        ).scalar() or 0
+
+        # Revenue statistics
+        gross_revenue = PaymentService.calculate_gross_revenue(db, start_date, end_date)
+        total_payouts = PaymentService.calculate_total_payouts(db, start_date, end_date)
+        net_profit = PaymentService.calculate_net_profit(db, start_date, end_date)
+
+        # Payment statistics
+        total_payments = db.query(func.count(Payment.id)).filter(
+            Payment.created_at >= start_date,
+            Payment.created_at <= end_date
+        ).scalar() or 0
+
+        # Use PaymentStatus enum value instead of string
+        from ..models.payment_models import PaymentStatus
+        completed_payments = db.query(func.count(Payment.id)).filter(
+            Payment.status == PaymentStatus.COMPLETED,
+            Payment.created_at >= start_date,
+            Payment.created_at <= end_date
+        ).scalar() or 0
+
+        # Driver payout statistics
+        total_payout_requests = db.query(func.count(DriverPayout.id)).filter(
+            DriverPayout.created_at >= start_date,
+            DriverPayout.created_at <= end_date
+        ).scalar() or 0
+
+        # Use PayoutStatus enum value instead of string
+        from ..models.payment_models import PayoutStatus
+        disbursed_payouts = db.query(func.count(DriverPayout.id)).filter(
+            DriverPayout.payout_status == PayoutStatus.DISBURSED,
+            DriverPayout.payout_date >= start_date,
+            DriverPayout.payout_date <= end_date
+        ).scalar() or 0
+
+        # User statistics
+        total_clients = db.query(func.count(User.id)).filter(
+            User.role == "client"
+        ).scalar() or 0
+
+        total_drivers = db.query(func.count(User.id)).filter(
+            User.role == "driver"
+        ).scalar() or 0
+
+        return {
+            "period_days": days,
+            "period_start": start_date.isoformat(),
+            "period_end": end_date.isoformat(),
+            "orders": {
+                "total": total_orders,
+                "completed": completed_orders,
+                "completion_rate": round((completed_orders / total_orders * 100) if total_orders > 0 else 0, 2)
+            },
+            "revenue": {
+                "gross_revenue": float(gross_revenue),
+                "total_payouts": float(total_payouts),
+                "net_profit": float(net_profit),
+                "profit_margin": round((net_profit / gross_revenue * 100) if gross_revenue > 0 else 0, 2)
+            },
+            "payments": {
+                "total": total_payments,
+                "completed": completed_payments,
+                "success_rate": round((completed_payments / total_payments * 100) if total_payments > 0 else 0, 2)
+            },
+            "payouts": {
+                "total_requests": total_payout_requests,
+                "disbursed": disbursed_payouts,
+                "pending": total_payout_requests - disbursed_payouts
+            },
+            "users": {
+                "total_clients": total_clients,
+                "total_drivers": total_drivers,
+                "total_users": total_clients + total_drivers
+            }
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
 
@@ -339,3 +437,135 @@ def get_order_price_breakdown(
             raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get price breakdown: {str(e)}")
+
+# Revenue Reporting Routes
+@router.get("/reports/revenue", response_model=RevenueReport)
+def get_revenue_report(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    admin_verified = Depends(verify_admin_key)
+):
+    """
+    Calculate and return gross revenue for a specified period.
+    Admin/Finance access.
+    """
+    try:
+        from datetime import datetime
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+
+        revenue = PaymentService.calculate_gross_revenue(db, start, end)
+
+        return RevenueReport(
+            gross_revenue=revenue,
+            total_payouts=Decimal("0"),  # Not needed for revenue report
+            net_profit=Decimal("0"),     # Not needed for revenue report
+            period_start=start,
+            period_end=end
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating revenue: {str(e)}")
+
+@router.get("/reports/profits", response_model=ProfitReport)
+def get_profit_report(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    admin_verified = Depends(verify_admin_key)
+):
+    """
+    Calculate and return net profit for a specified period.
+    Admin/Finance access.
+    """
+    try:
+        from datetime import datetime
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+
+        revenue = PaymentService.calculate_gross_revenue(db, start, end)
+        payouts = PaymentService.calculate_total_payouts(db, start, end)
+        profit = PaymentService.calculate_net_profit(db, start, end)
+
+        return ProfitReport(
+            gross_revenue=revenue,
+            total_payouts=payouts,
+            net_profit=profit,
+            period_start=start,
+            period_end=end
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating profits: {str(e)}")
+
+@router.get("/reports/history", response_model=HistoryReport)
+def get_financial_history(
+    start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    admin_verified = Depends(verify_admin_key)
+):
+    """
+    Detailed ledger view of all payments and payouts within a period.
+    Admin/Finance access.
+    """
+    try:
+        from datetime import datetime
+        from ..schemas.payment_schemas import LedgerEntry
+
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+
+        # Use PaymentStatus enum value instead of string
+        payments = db.query(Payment).filter(
+            Payment.status == PaymentStatus.COMPLETED,
+            Payment.created_at >= start,
+            Payment.created_at <= end
+        ).all()
+
+        # Get payouts using enum value
+        payouts = db.query(DriverPayout).filter(
+            DriverPayout.payout_status == PayoutStatus.DISBURSED,
+            DriverPayout.payout_date >= start,
+            DriverPayout.payout_date <= end
+        ).all()
+
+        # Combine into ledger entries
+        entries = []
+
+        for payment in payments:
+            entries.append(LedgerEntry(
+                date=payment.created_at,
+                type="payment",
+                amount=payment.amount,
+                description=f"Payment from client {payment.client_id} for request {payment.request_id}",
+                reference_id=payment.id
+            ))
+
+        for payout in payouts:
+            entries.append(LedgerEntry(
+                date=payout.payout_date,
+                type="payout",
+                amount=-payout.payout_amount,  # Negative for expenses
+                description=f"Payout to driver {payout.driver_id} for request {payout.request_id}",
+                reference_id=payout.id
+            ))
+
+        # Sort by date
+        entries.sort(key=lambda x: x.date)
+
+        return HistoryReport(
+            entries=entries,
+            period_start=start,
+            period_end=end
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving financial history: {str(e)}")

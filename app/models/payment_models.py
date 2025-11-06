@@ -31,22 +31,44 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    order_id = Column(String, ForeignKey("orders.id"), nullable=False)
-    user_id = Column(String, nullable=False)  # Can be client_id or driver_id
-    payment_type = Column(Enum(PaymentType), nullable=False)
+    client_id = Column(String, ForeignKey("users.id"), nullable=False)
+    request_id = Column(String, ForeignKey("orders.id"), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
-    currency = Column(String, default="ZAR")
-    payment_method = Column(Enum(PaymentMethod), nullable=False)
-    gateway = Column(Enum(PaymentGateway), nullable=True)
+    payment_date = Column(DateTime, nullable=True)
+    payment_method = Column(String, nullable=False)  # e.g., 'Credit Card', 'Cash', 'Transfer'
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
-    transaction_id = Column(String, nullable=True)  # External transaction ID
-    transaction_details = Column(Text, nullable=True)  # JSON string for additional details
+    transaction_id = Column(String, nullable=True)  # External payment gateway transaction ID
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    order = relationship("Order", back_populates="payments")
+    client = relationship("User", back_populates="payments")
+    request = relationship("Order", back_populates="payments")
     refunds = relationship("Refund", back_populates="payment")
+
+class PayoutStatus(enum.Enum):
+    REQUESTED = "requested"
+    APPROVED = "approved"
+    DISBURSED = "disbursed"
+    FAILED = "failed"
+
+class DriverPayout(Base):
+    __tablename__ = "driver_payouts"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    driver_id = Column(String, ForeignKey("users.id"), nullable=False)
+    request_id = Column(String, ForeignKey("orders.id"), nullable=False)
+    payout_amount = Column(Numeric(10, 2), nullable=False)
+    payout_date = Column(DateTime, nullable=True)
+    payout_status = Column(Enum(PayoutStatus), default=PayoutStatus.REQUESTED)
+    payment_request_ref = Column(String, nullable=True)
+    disbursement_method = Column(String, nullable=True)  # e.g., 'Bank Transfer', 'Wallet'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    driver = relationship("User", back_populates="driver_payouts")
+    request = relationship("Order", back_populates="driver_payouts")
 
 class Refund(Base):
     __tablename__ = "refunds"

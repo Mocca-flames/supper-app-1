@@ -92,11 +92,20 @@ def update_location(
     """Update driver location"""
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="User is not a driver")
+
+    # Only update location if driver is available
+    if not current_user.driver_profile or not current_user.driver_profile.is_available:
+        raise HTTPException(status_code=400, detail="Driver must be available to update location")
+
     RedisService.set_driver_location(
         current_user.id, # Changed to current_user.id
         location_data.latitude,
         location_data.longitude
     )
+
+    # Update last seen timestamp to indicate driver is active
+    RedisService.set_driver_last_seen(current_user.id)
+
     return {"message": "Location updated successfully"}
 
 @router.put("/profile", response_model=DriverProfileResponse)

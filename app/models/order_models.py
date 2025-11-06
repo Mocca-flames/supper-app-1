@@ -62,5 +62,6 @@ class Order(Base):
     driver = relationship("Driver", back_populates="orders")
 
     # Payment relationships
-    payments = relationship("Payment", back_populates="order", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="request", cascade="all, delete-orphan")
     refunds = relationship("Refund", back_populates="order", cascade="all, delete-orphan")
+    driver_payouts = relationship("DriverPayout", back_populates="request", cascade="all, delete-orphan")

@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager # Added for lifespan
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from .models import user_models, order_models, discount_models, rating_models
 from .auth import firebase_auth  # Initializes Firebase Admin SDK (via app.auth.firebase_auth)
 from .api import auth_routes, client_routes, driver_routes, admin_routes, websocket_routes, order_routes, user_routes, rating_routes # Added user_routes, rating_routes
 from .utils.redis_client import redis_client
+from .services.websocket_service import WebSocketService
 from .config import settings
 import uvicorn
 import firebase_admin # Added for Firebase details
@@ -29,6 +31,10 @@ rating_models.Base.metadata.create_all(bind=engine)
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Application startup initiated via lifespan manager.")
+
+    # Background tasks
+    background_tasks = []
+
     try:
         # Log Firebase initialization details
         # Firebase is initialized when firebase_auth module is imported.
@@ -44,11 +50,26 @@ async def lifespan(app: FastAPI):
             logger.warning("Could not ping Redis on startup. Health check will report status.")
     except Exception as e:
         logger.error(f"Redis connection error on startup: {e}")
-    
+
+    # Start background task for monitoring offline drivers
+    logger.info("Starting background task: offline driver monitor")
+    driver_monitor_task = asyncio.create_task(WebSocketService.run_offline_driver_monitor(interval_minutes=5))
+    background_tasks.append(driver_monitor_task)
+
     logger.info("Application startup complete.")
     yield
     # Shutdown logic
     logger.info("Application shutting down via lifespan manager.")
+
+    # Cancel background tasks
+    for task in background_tasks:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    logger.info("All background tasks cancelled.")
 
 
 app = FastAPI(

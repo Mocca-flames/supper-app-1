@@ -8,9 +8,9 @@ from typing import List, Optional, Dict, Any
 import logging
 import json
 
-from ..models.payment_models import Payment, Refund, PaymentStatus, PaymentType, PaymentGateway
+from ..models.payment_models import Payment, Refund, PaymentStatus, PaymentType, PaymentGateway, DriverPayout, PayoutStatus
 from ..models.order_models import Order
-from ..schemas.payment_schemas import PaymentCreate, PaymentUpdate, RefundCreate
+from ..schemas.payment_schemas import PaymentCreate, PaymentUpdate, RefundCreate, DriverPayoutCreate, DriverPayoutUpdate
 from ..utils.redis_client import RedisService
 import hashlib
 import requests
@@ -466,3 +466,166 @@ class PaymentService:
         except Exception as e:
             logger.error(f"❌ Error during payment reconciliation: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+    @staticmethod
+    def create_driver_payout_request(
+        db: Session,
+        driver_id: str,
+        payout_data: DriverPayoutCreate
+    ) -> DriverPayout:
+        """Create a driver payout request for accumulated earnings"""
+        logger.info(f"💰 Creating driver payout request for driver: {driver_id}")
+
+        try:
+            # Calculate eligible earnings for the driver
+            eligible_amount = PaymentService.calculate_driver_earnings(db, driver_id)
+
+            if eligible_amount <= 0:
+                logger.error(f"❌ No eligible earnings for driver: {driver_id}")
+                raise ValueError("No eligible earnings available for payout")
+
+            # Create payout request
+            payout = DriverPayout(
+                driver_id=driver_id,
+                request_id=payout_data.request_id,
+                payout_amount=eligible_amount,
+                payout_status=PayoutStatus.REQUESTED
+            )
+
+            db.add(payout)
+            db.commit()
+            db.refresh(payout)
+
+            logger.info(f"✅ Driver payout request created: {payout.id} for R{eligible_amount}")
+            return payout
+
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Database error creating driver payout: {str(e)}")
+            db.rollback()
+            raise ValueError(f"Error creating driver payout: {str(e)}") from e
+
+    @staticmethod
+    def update_driver_payout_status(
+        db: Session,
+        payout_id: str,
+        update_data: DriverPayoutUpdate
+    ) -> DriverPayout:
+        """Update driver payout status (approval/disbursement)"""
+        logger.info(f"🔄 Updating driver payout status: {payout_id}")
+
+        try:
+            payout = db.query(DriverPayout).filter(DriverPayout.id == payout_id).first()
+            if not payout:
+                logger.error(f"❌ Driver payout not found: {payout_id}")
+                raise ValueError("Driver payout not found")
+
+            old_status = payout.payout_status
+            payout.payout_status = update_data.payout_status or payout.payout_status
+            payout.payout_date = update_data.payout_date or payout.payout_date
+            payout.disbursement_method = update_data.disbursement_method or payout.disbursement_method
+            payout.updated_at = datetime.utcnow()
+
+            db.commit()
+            db.refresh(payout)
+
+            logger.info(f"✅ Driver payout status updated: {old_status.value} → {payout.payout_status.value}")
+            return payout
+
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Database error updating driver payout: {str(e)}")
+            db.rollback()
+            raise ValueError(f"Error updating driver payout: {str(e)}") from e
+
+    @staticmethod
+    def get_driver_payout_history(
+        db: Session,
+        driver_id: str
+    ) -> List[DriverPayout]:
+        """Get payout history for a specific driver"""
+        logger.info(f"🔍 Getting payout history for driver: {driver_id}")
+        return db.query(DriverPayout).filter(DriverPayout.driver_id == driver_id).order_by(DriverPayout.created_at.desc()).all()
+
+    @staticmethod
+    def calculate_driver_earnings(
+        db: Session,
+        driver_id: str
+    ) -> Decimal:
+        """Calculate total eligible earnings for a driver since last payout"""
+        logger.info(f"🧮 Calculating earnings for driver: {driver_id}")
+
+        try:
+            # Find the date of the last disbursed payout
+            last_payout_date = db.query(func.max(DriverPayout.payout_date)).filter(
+                DriverPayout.driver_id == driver_id,
+                DriverPayout.payout_status == PayoutStatus.DISBURSED
+            ).scalar()
+
+            # If no previous payout, calculate from all time
+            if not last_payout_date:
+                last_payout_date = datetime.min
+
+            # Sum completed payments for orders assigned to this driver since last payout
+            earnings = db.query(func.sum(Payment.amount)).filter(
+                Payment.status == PaymentStatus.COMPLETED,
+                Payment.request.has(Order.driver_id == driver_id),
+                Payment.created_at > last_payout_date
+            ).scalar() or Decimal("0")
+
+            logger.info(f"✅ Driver {driver_id} earnings: R{earnings} since {last_payout_date}")
+            return earnings
+
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Database error calculating driver earnings: {str(e)}")
+            raise ValueError(f"Error calculating driver earnings: {str(e)}") from e
+
+    @staticmethod
+    def calculate_gross_revenue(
+        db: Session,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Decimal:
+        """Calculate gross revenue for a date range"""
+        logger.info(f"🧮 Calculating gross revenue from {start_date} to {end_date}")
+
+        revenue = db.query(func.sum(Payment.amount)).filter(
+            Payment.status == PaymentStatus.COMPLETED,
+            Payment.created_at >= start_date,
+            Payment.created_at <= end_date
+        ).scalar() or Decimal("0")
+
+        logger.info(f"✅ Gross revenue: R{revenue}")
+        return revenue
+
+    @staticmethod
+    def calculate_total_payouts(
+        db: Session,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Decimal:
+        """Calculate total driver payouts for a date range"""
+        logger.info(f"🧮 Calculating total payouts from {start_date} to {end_date}")
+
+        payouts = db.query(func.sum(DriverPayout.payout_amount)).filter(
+            DriverPayout.payout_status == PayoutStatus.DISBURSED,
+            DriverPayout.payout_date >= start_date,
+            DriverPayout.payout_date <= end_date
+        ).scalar() or Decimal("0")
+
+        logger.info(f"✅ Total payouts: R{payouts}")
+        return payouts
+
+    @staticmethod
+    def calculate_net_profit(
+        db: Session,
+        start_date: datetime,
+        end_date: datetime
+    ) -> Decimal:
+        """Calculate net profit (Revenue - Payouts) for a date range"""
+        logger.info(f"🧮 Calculating net profit from {start_date} to {end_date}")
+
+        revenue = PaymentService.calculate_gross_revenue(db, start_date, end_date)
+        payouts = PaymentService.calculate_total_payouts(db, start_date, end_date)
+        profit = revenue - payouts
+
+        logger.info(f"✅ Net profit: R{profit} (Revenue: R{revenue} - Payouts: R{payouts})")
+        return profit
