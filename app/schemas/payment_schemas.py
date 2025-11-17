@@ -9,6 +9,9 @@ class PaymentCreate(BaseModel):
     request_id: str
     amount: Decimal
     payment_method: str
+    payment_type: PaymentType
+    currency: str
+    gateway: Optional[PaymentGateway] = None
     transaction_id: Optional[str] = None
 
 class PaymentResponse(BaseModel):

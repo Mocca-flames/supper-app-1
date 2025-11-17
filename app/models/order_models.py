@@ -27,7 +27,7 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    client_id = Column(String, ForeignKey("users.id"), nullable=False)  # Changed ForeignKey to users.id
+    client_id = Column(String, ForeignKey("users.id", onupdate="CASCADE"), nullable=False)  # Changed ForeignKey to users.id
     driver_id = Column(String, ForeignKey("drivers.driver_id"), nullable=True)
 
     order_type = Column(Enum(OrderType, values_callable=lambda e: [x.value for x in e], name="ordertype"), nullable=False)

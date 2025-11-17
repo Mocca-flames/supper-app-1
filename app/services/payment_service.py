@@ -58,8 +58,8 @@ class PaymentService:
 
             # Create payment record with PENDING status
             payment = Payment(
-                order_id=payment_data.order_id,
-                user_id=payment_data.user_id,
+                request_id=payment_data.request_id,
+                client_id=payment_data.client_id,
                 payment_type=payment_data.payment_type,
                 amount=payment_data.amount,
                 currency=payment_data.currency,
@@ -75,9 +75,9 @@ class PaymentService:
             db.refresh(payment)
 
             # Fetch user details for payment
-            user = db.query(User).filter(User.id == payment_data.user_id).first()
+            user = db.query(User).filter(User.id == payment_data.client_id).first()
             if not user:
-                logger.error(f"❌ User not found for payment: {payment_data.user_id}")
+                logger.error(f"❌ User not found for payment: {payment_data.client_id}")
                 raise ValueError("User not found for payment")
 
             if payment.gateway == PaymentGateway.PAYFAST:

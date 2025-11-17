@@ -34,21 +34,9 @@ class UserService:
                 # Update existing user if needed
                 if existing_user.id != firebase_uid:
                     logger.info(f"Updating user ID for email {user_email} from {existing_user.id} to {firebase_uid}")
-
-                    # First update any references to this user in the drivers table
-                    if existing_user.driver_profile:
-                        existing_user.driver_profile.driver_id = firebase_uid
-                        db.add(existing_user.driver_profile)
-                        logger.info(f"Updated driver profile reference for user {user_email}")
-
-                    # Also update any references in the clients table
-                    if existing_user.client_profile:
-                        existing_user.client_profile.client_id = firebase_uid
-                        db.add(existing_user.client_profile)
-                        logger.info(f"Updated client profile reference for user {user_email}")
-
-                    # Now update the user's ID
+                    # With ON UPDATE CASCADE on foreign keys, updating the user ID will automatically update all references
                     existing_user.id = firebase_uid
+                    logger.info(f"User ID updated to {firebase_uid} (CASCADE will handle FK updates)")
 
                 if existing_user.role != user_type:
                     existing_user.role = user_type
@@ -78,6 +66,7 @@ class UserService:
                 db.add(existing_user)
                 db.commit()
                 db.refresh(existing_user)
+                logger.info(f"Successfully committed user update for {user_email}")
                 return existing_user
             else:
                 # Create new user

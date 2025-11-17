@@ -26,8 +26,8 @@ class User(Base):
 
 class Client(Base):
     __tablename__ = "clients"
-    
-    client_id = Column(String, ForeignKey("users.id"), primary_key=True)
+
+    client_id = Column(String, ForeignKey("users.id", onupdate="CASCADE"), primary_key=True)
     home_address = Column(Text, nullable=True)
     is_verified = Column(Boolean, default=False)
     
@@ -38,7 +38,7 @@ class Client(Base):
 class Driver(Base):
     __tablename__ = "drivers"
 
-    driver_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    driver_id = Column(String, ForeignKey("users.id", onupdate="CASCADE"), primary_key=True)
     license_no = Column(String, nullable=True)
     vehicle_type = Column(String, nullable=True)  # 'car', 'bike', 'ambulance', 'van'
     is_available = Column(Boolean, default=True)

@@ -64,7 +64,7 @@ def initialize_paystack_payment(
         payment = PaymentService.create_payment(db, payment_data, order)
 
         # Get user details for Paystack
-        order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+        order = db.query(Order).filter(Order.id == payment_data.request_id).first()
         if payment_data.payment_type == PaymentType.CLIENT_PAYMENT:
             user_id = order.client_id
         else:
@@ -174,7 +174,7 @@ def create_payment(
     try:
         # For client payments, ensure the user is the client
         if payment_data.payment_type == PaymentType.CLIENT_PAYMENT:
-            order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+            order = db.query(Order).filter(Order.id == payment_data.request_id).first()
             if not order:
                 raise HTTPException(status_code=404, detail="Order not found")
 
@@ -183,7 +183,7 @@ def create_payment(
 
         # For driver payments, ensure the user is the driver or admin
         elif payment_data.payment_type == PaymentType.DRIVER_PAYMENT:
-            order = db.query(Order).filter(Order.id == payment_data.order_id).first()
+            order = db.query(Order).filter(Order.id == payment_data.request_id).first()
             if not order:
                 raise HTTPException(status_code=404, detail="Order not found")
 

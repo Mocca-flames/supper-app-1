@@ -31,13 +31,16 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    client_id = Column(String, ForeignKey("users.id"), nullable=False)
-    request_id = Column(String, ForeignKey("orders.id"), nullable=False)
+    client_id = Column(String, ForeignKey("users.id", onupdate="CASCADE"), nullable=False)
+    request_id = Column(String, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    payment_type = Column(Enum(PaymentType), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
-    payment_date = Column(DateTime, nullable=True)
-    payment_method = Column(String, nullable=False)  # e.g., 'Credit Card', 'Cash', 'Transfer'
+    currency = Column(String, default="ZAR", nullable=True)
+    payment_method = Column(Enum(PaymentMethod), nullable=False)
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
     transaction_id = Column(String, nullable=True)  # External payment gateway transaction ID
+    transaction_details = Column(Text, nullable=True)
+    gateway = Column(Enum(PaymentGateway), default=PaymentGateway.PAYFAST, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -56,7 +59,7 @@ class DriverPayout(Base):
     __tablename__ = "driver_payouts"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    driver_id = Column(String, ForeignKey("users.id"), nullable=False)
+    driver_id = Column(String, ForeignKey("users.id", onupdate="CASCADE"), nullable=False)
     request_id = Column(String, ForeignKey("orders.id"), nullable=False)
     payout_amount = Column(Numeric(10, 2), nullable=False)
     payout_date = Column(DateTime, nullable=True)
